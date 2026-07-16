@@ -2,7 +2,7 @@ name: Garmin-Daten aktualisieren
 
 on:
   schedule:
-    - cron: "30 5 * * *"   # täglich 05:30 UTC (~07:30 MESZ)
+    - cron: "15 */2 * * *"   # alle 2 Stunden
   workflow_dispatch:
 
 permissions:

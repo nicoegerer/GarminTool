@@ -27,7 +27,6 @@ werden automatisch ausgeblendet.
 ```
 scripts/export_data.py   zieht alle Garmin-Daten → docs/data/*.json   (Python, uv)
 docs/                    statisches Dashboard (HTML/CSS/JS + Chart.js) ← GitHub Pages
-backend/                 älterer FastAPI-Prototyp (Sync + Empfehlung), nicht fürs Hosting nötig
 ```
 
 Kein Build-Schritt, kein Server: Das Dashboard liest die exportierten JSON-Dateien direkt.
@@ -35,7 +34,7 @@ Kein Build-Schritt, kein Server: Das Dashboard liest die exportierten JSON-Datei
 ## Daten aktualisieren
 
 Voraussetzung: einmalige Garmin-Anmeldung, deren Token-Cache unter `~/.garminconnect` liegt
-(wird z. B. vom Garmin-MCP angelegt; alternativ `python backend/scripts/login.py`).
+(wird z. B. vom Garmin-MCP angelegt).
 
 ```powershell
 uv run scripts/export_data.py          # zieht alles neu nach docs/data/
@@ -68,7 +67,7 @@ Alle Pfade im Dashboard sind relativ — beide Varianten funktionieren ohne Anpa
 
 ## Automatischer Daten-Refresh (optional)
 
-Der Workflow `.github/workflows/refresh-data.yml` aktualisiert die Daten täglich um 05:30 UTC.
+Der Workflow `.github/workflows/refresh-data.yml` aktualisiert die Daten alle 2 Stunden.
 Dafür ein Repo-Secret **`GARMIN_TOKENS_JSON`** anlegen mit dem Inhalt der Datei
 `~/.garminconnect/garmin_tokens.json`.
 
@@ -85,8 +84,3 @@ python -m http.server 8123 --directory docs
 ```
 
 (Direktes Öffnen per file:// funktioniert nicht, weil `fetch` die JSON-Dateien laden muss.)
-
----
-
-Der frühere FastAPI/React-Prototyp lebt weiter unter `backend/` (lokale SQLite-Sync-App
-mit derselben Empfehlungs-Engine, siehe `backend/app/recommendations.py`).
