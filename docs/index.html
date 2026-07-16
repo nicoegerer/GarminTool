@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GarminTool · Trainings-Dashboard</title>
+  <meta name="description" content="Persönliches Trainings-Dashboard mit Garmin-Daten: Trainingsvorschlag, Streaks, Form- und Gesundheitstrends.">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230b0e14'/%3E%3Cpath d='M14 58 L32 58 L42 30 L56 74 L66 47 L72 58 L86 58' stroke='%233987e5' stroke-width='9' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./css/style.css?v=1">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="22" fill="#131a26"/><path d="M14 58 L32 58 L42 30 L56 74 L66 47 L72 58 L86 58" stroke="#3987e5" stroke-width="9" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div>
+        <div class="brand-name">GarminTool</div>
+        <div class="brand-sub" id="brand-sub">Trainings-Dashboard</div>
+      </div>
+    </div>
+    <div class="topbar-meta" id="topbar-meta"></div>
+  </div>
+</header>
+
+<main class="page" id="page">
+
+  <!-- ============ HEUTE ============ -->
+  <section class="section" id="sec-heute">
+    <div class="section-head">
+      <span class="kicker">Heute</span>
+      <h2 id="today-title">Dein Tag</h2>
+    </div>
+
+    <div class="hero-grid">
+      <article class="card reco-card" id="reco-card" aria-live="polite">
+        <div class="reco-head">
+          <span class="reco-kicker">Trainingsvorschlag</span>
+          <span class="reco-badge" id="reco-badge"></span>
+        </div>
+        <h3 class="reco-title" id="reco-title">–</h3>
+        <p class="reco-desc" id="reco-desc"></p>
+        <div class="reco-meta" id="reco-meta"></div>
+        <details class="reco-why">
+          <summary>Warum dieser Vorschlag?</summary>
+          <ul id="reco-rationale"></ul>
+        </details>
+      </article>
+      <div class="kpi-grid" id="kpi-grid"></div>
+    </div>
+  </section>
+
+  <!-- ============ KONSISTENZ ============ -->
+  <section class="section" id="sec-konsistenz">
+    <div class="section-head">
+      <span class="kicker">Konsistenz</span>
+      <h2>Streaks &amp; Aktivität</h2>
+    </div>
+    <div class="streak-grid" id="streak-grid"></div>
+    <article class="card">
+      <div class="card-head">
+        <h3>Aktivitäts-Kalender <span class="card-sub">letzte 12 Monate · Farbtiefe = Trainingsdauer</span></h3>
+      </div>
+      <div class="heatmap-wrap">
+        <div class="heatmap" id="heatmap"></div>
+        <div class="heatmap-legend" id="heatmap-legend"></div>
+      </div>
+    </article>
+  </section>
+
+  <!-- ============ LETZTE EINHEITEN ============ -->
+  <section class="section" id="sec-letzte">
+    <div class="section-head">
+      <span class="kicker">Training</span>
+      <h2>Letzte Einheiten</h2>
+    </div>
+    <div class="activity-list" id="activity-list"></div>
+    <button class="ghost-btn" id="more-activities">Mehr anzeigen</button>
+  </section>
+
+  <!-- ============ FILTER + TRENDS ============ -->
+  <div class="filter-row" id="filter-row" role="group" aria-label="Zeitraum für alle Trend-Diagramme">
+    <span class="filter-label">Zeitraum</span>
+    <button class="filter-chip" data-days="90">90 Tage</button>
+    <button class="filter-chip is-active" data-days="180">180 Tage</button>
+    <button class="filter-chip" data-days="365">1 Jahr</button>
+    <button class="filter-chip" data-days="9999">Alles</button>
+  </div>
+
+  <section class="section" id="sec-form">
+    <div class="section-head">
+      <span class="kicker">Fortschritt</span>
+      <h2>Form &amp; Fitness</h2>
+    </div>
+    <div class="chart-grid">
+      <article class="card chart-card chart-wide" id="card-load"></article>
+      <article class="card chart-card chart-wide" id="card-weekly-volume"></article>
+      <article class="card chart-card" id="card-vo2max"></article>
+      <article class="card chart-card" id="card-load-balance"></article>
+    </div>
+  </section>
+
+  <section class="section" id="sec-race">
+    <div class="section-head">
+      <span class="kicker">Prognosen</span>
+      <h2>Wettkampf-Vorhersagen</h2>
+    </div>
+    <div class="race-now" id="race-now"></div>
+    <div class="chart-grid chart-grid-4" id="race-charts"></div>
+  </section>
+
+  <section class="section" id="sec-tempo">
+    <div class="section-head">
+      <span class="kicker">Tempo</span>
+      <h2>Wirst du schneller?</h2>
+    </div>
+    <div class="chart-grid" id="tempo-charts"></div>
+  </section>
+
+  <section class="section" id="sec-gesundheit">
+    <div class="section-head">
+      <span class="kicker">Gesundheit</span>
+      <h2>Erholung &amp; Alltag</h2>
+    </div>
+    <div class="chart-grid" id="health-charts"></div>
+  </section>
+
+  <section class="section" id="sec-kraft">
+    <div class="section-head">
+      <span class="kicker">Kraft</span>
+      <h2>Krafttraining</h2>
+    </div>
+    <div class="chart-grid" id="strength-area"></div>
+  </section>
+
+  <section class="section" id="sec-rekorde">
+    <div class="section-head">
+      <span class="kicker">Bestleistungen</span>
+      <h2>Rekorde</h2>
+    </div>
+    <div class="pr-grid" id="pr-grid"></div>
+  </section>
+
+  <section class="section" id="sec-badges">
+    <div class="section-head">
+      <span class="kicker">Erfolge</span>
+      <h2>Abzeichen</h2>
+    </div>
+    <div class="badge-row" id="badge-row"></div>
+  </section>
+
+  <footer class="footer" id="footer"></footer>
+</main>
+
+<div class="loading" id="loading">
+  <div class="loading-pulse"></div>
+  <p>Lade Trainingsdaten …</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="./js/data.js?v=1"></script>
+<script src="./js/reco.js?v=1"></script>
+<script src="./js/charts.js?v=1"></script>
+<script src="./js/app.js?v=1"></script>
+</body>
+</html>

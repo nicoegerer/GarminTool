@@ -1,90 +1,92 @@
-# Garmin Manager
+# GarminTool 🏊🚴🏃
 
-Persönliche Web-App, die deine Garmin-Connect-Daten synchronisiert, in einer lokalen
-SQLite-DB verwaltet und darauf basierend tägliche Workout-Empfehlungen gibt (regelbasiert,
-mit nachvollziehbarer Begründung statt Blackbox).
+Persönliches Trainings-Dashboard, gespeist aus **allen verfügbaren Garmin-Connect-Daten** —
+als rein statische Seite, gehostet auf **GitHub Pages**.
+
+**Features**
+
+- 🎯 **Trainingsvorschlag für heute** — regelbasiert und erklärbar (Belastungsquote ACWR,
+  Form/TSB, Schlaf, Body Battery, Ruhepuls-Abweichung, Garmin-Load-Balance, Reiz-Rotation,
+  Sport-Rotation Laufen/Rad/Schwimmen). Jede Empfehlung nennt die Zahlen dahinter.
+- 🔥 **Streaks & Konsistenz** — Wochen-Serien, aktive Tage, GitHub-Style-Aktivitätskalender.
+- 📋 **Letzte Einheiten** mit sportart-spezifischen Kennzahlen (Pace, Watt, /100m, Sätze).
+- 📈 **Fortschritts-Charts**: Trainingslast CTL/ATL/TSB, Wochenvolumen je Sportart, VO₂max,
+  Trainingslast-Fokus vs. Garmin-Zielbereiche, Wettkampf-Prognosen (5 km – Marathon) im Verlauf,
+  Lauf-Pace-, Rad-Tempo-, Rad-Leistungs- und Schwimm-Pace-Trends.
+- ❤️ **Gesundheit**: Ruhepuls, Schlaf-Score, Schlafphasen, Body Battery, Stress, Schritte,
+  Intensitätsminuten.
+- 🏋️ **Krafttraining**, 🏅 **Persönliche Rekorde**, 🎖 **Abzeichen**.
+- Globaler Zeitraum-Filter (90 T / 180 T / 1 J / Alles), Tabellenansicht zu jedem Chart,
+  responsive, dunkles Design.
+
+Sektionen ohne Daten (z. B. HRV-Status/Training Readiness, die der Forerunner 945 nicht liefert)
+werden automatisch ausgeblendet.
 
 ## Architektur
 
-- **Backend**: FastAPI (Python), SQLite via SQLAlchemy, APScheduler für periodischen
-  Hintergrund-Sync, `garminconnect` für den direkten Garmin-Connect-Zugriff.
-- **Frontend**: React + TypeScript (Vite), TanStack Query, Recharts.
-- **Deployment**: ein Docker-Image (Multi-Stage: Frontend-Build → FastAPI liefert die
-  gebauten Static-Files mit aus), ein Port, eine SQLite-Datei.
-
-Seiten: Heute (Empfehlung inkl. Begründung), Aktivitäten, Trends (VO2max, Ruhepuls, HRV,
-Gewicht, Schlaf, Trainingslast, Body Battery, Wettkampf-Prognosen), Gear, Trainingspläne,
-Einstellungen (Sync-Status, manueller Sync).
-
-## Wichtig: Garmin-Zugangsdaten
-
-Die App synchronisiert direkt mit Garmin Connect. Dein Passwort wird **nirgends
-gespeichert** und landet nie in einer Konfigurationsdatei: Der einmalige Login läuft über
-ein Skript, das dich interaktiv nach E-Mail/Passwort fragt (Passwort-Eingabe versteckt via
-`getpass`) und danach nur einen Session-Token-Cache auf der Platte ablegt. Diesen Cache
-verwendet das Backend danach automatisch weiter.
-
-## Setup (lokal, ohne Docker)
-
-```bash
-cd backend
-python -m venv .venv
-.venv/Scripts/activate        # Windows
-pip install -r requirements.txt
-
-cp ../.env.example ../.env     # bei Bedarf anpassen
-
-# Einmaliger Garmin-Login (im eigenen Terminal, Passwort wird nicht angezeigt/gespeichert):
-python scripts/login.py
-
-# Backend starten:
-uvicorn app.main:app --reload --port 8000
+```
+scripts/export_data.py   zieht alle Garmin-Daten → docs/data/*.json   (Python, uv)
+docs/                    statisches Dashboard (HTML/CSS/JS + Chart.js) ← GitHub Pages
+backend/                 älterer FastAPI-Prototyp (Sync + Empfehlung), nicht fürs Hosting nötig
 ```
 
-Frontend (separates Terminal):
+Kein Build-Schritt, kein Server: Das Dashboard liest die exportierten JSON-Dateien direkt.
 
-```bash
-cd frontend
-npm install
-npm run dev
+## Daten aktualisieren
+
+Voraussetzung: einmalige Garmin-Anmeldung, deren Token-Cache unter `~/.garminconnect` liegt
+(wird z. B. vom Garmin-MCP angelegt; alternativ `python backend/scripts/login.py`).
+
+```powershell
+uv run scripts/export_data.py          # zieht alles neu nach docs/data/
+git add docs/data && git commit -m "data refresh" && git push
 ```
 
-Der Vite-Dev-Server proxied `/api/*` automatisch an `http://127.0.0.1:8000` (siehe
-`frontend/vite.config.ts`).
+Optionen: `--days 400` (Fenster der Tages-Zeitreihen), `--out docs/data`.
 
-### Ohne eigenen Garmin-Login testen
+**Privatsphäre:** Das Export-Script lässt GPS-Startkoordinaten und Geburtsdatum bewusst weg —
+die JSON-Dateien werden öffentlich gehostet. Bedenke, dass Aktivitätsnamen (z. B. Ortsnamen)
+und alle Gesundheitswerte öffentlich sichtbar sind, sobald das Repo/Pages öffentlich ist.
 
-Zum Ausprobieren/Verifizieren der App ohne Garmin-Login gibt es ein Seed-Skript mit
-echten (bereits abgerufenen) Beispieldaten:
+## GitHub Pages einrichten
 
-```bash
-python backend/scripts/seed_sample_data.py
+1. Repo zu GitHub pushen.
+2. **Settings → Pages → Source: „Deploy from a branch“**, Branch `main`, Ordner **`/docs`**.
+3. Danach ist die Seite unter `https://<user>.github.io/GarminTool/` erreichbar.
+
+### Eigene Domain
+
+- **`garmintool.nicoegerer.de` (empfohlen):** In Settings → Pages die Custom Domain eintragen
+  (GitHub legt dann eine `docs/CNAME`-Datei an). Beim DNS-Anbieter einen **CNAME-Record**
+  `garmintool → <user>.github.io` setzen. „Enforce HTTPS“ aktivieren.
+- **`nicoegerer.de/GarminTool`:** funktioniert nur, wenn `nicoegerer.de` selbst schon die
+  GitHub-Pages-User-Site desselben Accounts ist (Repo `<user>.github.io`) — dann sind
+  Projekt-Repos automatisch unter dem Pfad erreichbar. Liegt die Domain woanders, nimm die
+  Subdomain-Variante.
+
+Alle Pfade im Dashboard sind relativ — beide Varianten funktionieren ohne Anpassung.
+
+## Automatischer Daten-Refresh (optional)
+
+Der Workflow `.github/workflows/refresh-data.yml` aktualisiert die Daten täglich um 05:30 UTC.
+Dafür ein Repo-Secret **`GARMIN_TOKENS_JSON`** anlegen mit dem Inhalt der Datei
+`~/.garminconnect/garmin_tokens.json`.
+
+⚠️ Hinweise:
+- Das Secret ist ein Login-Token für dein Garmin-Konto — sorgsam behandeln.
+- Tokens laufen irgendwann ab; dann das Secret mit der aktuellen lokalen Datei erneuern.
+- Ohne Secret überspringt der Workflow den Export einfach.
+
+## Lokale Vorschau
+
+```powershell
+python -m http.server 8123 --directory docs
+# → http://localhost:8123
 ```
 
-## Setup (Docker / Deployment)
+(Direktes Öffnen per file:// funktioniert nicht, weil `fetch` die JSON-Dateien laden muss.)
 
-```bash
-docker compose build
+---
 
-# Einmaliger interaktiver Garmin-Login (Token landet im "garmin_data"-Volume):
-docker compose run --rm garmin-app python scripts/login.py
-
-# App starten:
-docker compose up -d
-```
-
-Danach ist die App unter `http://<server>:8000` erreichbar (Frontend + API in einem
-Container). Der Sync läuft automatisch alle `SYNC_INTERVAL_MINUTES` (Default 120) im
-Hintergrund; ein manueller Sync ist über die Einstellungen-Seite oder
-`POST /api/settings/sync` möglich.
-
-## Tests
-
-```bash
-cd backend
-pytest
-```
-
-Die Recommendation-Engine (`app/recommendations.py`) ist bewusst als reine, testbare
-Funktion gebaut - keine versteckte Logik, jede Empfehlung kommt mit einer Liste der
-konkreten Zahlen, die zur Entscheidung geführt haben.
+Der frühere FastAPI/React-Prototyp lebt weiter unter `backend/` (lokale SQLite-Sync-App
+mit derselben Empfehlungs-Engine, siehe `backend/app/recommendations.py`).

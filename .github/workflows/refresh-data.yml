@@ -1,0 +1,56 @@
+name: Garmin-Daten aktualisieren
+
+on:
+  schedule:
+    - cron: "30 5 * * *"   # täglich 05:30 UTC (~07:30 MESZ)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Token-Secret prüfen
+        id: check
+        env:
+          TOKENS: ${{ secrets.GARMIN_TOKENS_JSON }}
+        run: |
+          if [ -z "$TOKENS" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Kein GARMIN_TOKENS_JSON-Secret gesetzt – Export wird übersprungen."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: uv installieren
+        if: steps.check.outputs.skip == 'false'
+        uses: astral-sh/setup-uv@v5
+
+      - name: Garmin-Token bereitstellen
+        if: steps.check.outputs.skip == 'false'
+        env:
+          TOKENS: ${{ secrets.GARMIN_TOKENS_JSON }}
+        run: |
+          mkdir -p "$HOME/.garminconnect"
+          printf '%s' "$TOKENS" > "$HOME/.garminconnect/garmin_tokens.json"
+
+      - name: Daten exportieren
+        if: steps.check.outputs.skip == 'false'
+        run: uv run scripts/export_data.py
+
+      - name: Änderungen committen
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/data
+          if git diff --cached --quiet; then
+            echo "Keine Datenänderungen."
+          else
+            git commit -m "chore: Garmin-Daten aktualisiert ($(date -u +%F))"
+            git push
+          fi
