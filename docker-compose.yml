@@ -1,0 +1,16 @@
+services:
+  garmin-app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: sqlite:////data/garmin.db
+      GARMIN_TOKEN_DIR: /data/.garmin_tokens
+      SYNC_INTERVAL_MINUTES: ${SYNC_INTERVAL_MINUTES:-120}
+      TZ: ${TZ:-Europe/Berlin}
+    volumes:
+      - garmin_data:/data
+    restart: unless-stopped
+
+volumes:
+  garmin_data:

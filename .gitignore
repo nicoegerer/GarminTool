@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.db
+*.db-journal
+.env
+.garmin_tokens/
+node_modules/
+dist/
+frontend/dist/
+*.egg-info/
+.pytest_cache/
