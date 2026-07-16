@@ -4,8 +4,8 @@
    Tabellenansicht als Nicht-Hover-Zugang zu jedem Wert)
    ============================================================ */
 
-const INK = "#f2f5f9", INK2 = "#a9b3c1", INK3 = "#717d8d";
-const GRID = "#232a35", SURFACE = "#151a23";
+const INK = "#faf6f0", INK2 = "rgba(250,246,240,0.65)", INK3 = "rgba(250,246,240,0.45)";
+const GRID = "#242421", SURFACE = "#1b1b19";
 
 Chart.defaults.font.family = getComputedStyle(document.documentElement).getPropertyValue("--font") || "Inter, system-ui, sans-serif";
 Chart.defaults.font.size = 11;
@@ -13,7 +13,7 @@ Chart.defaults.color = INK3;
 Chart.defaults.borderColor = GRID;
 Chart.defaults.animation = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? false : { duration: 350 };
 Chart.defaults.plugins.legend.display = false;
-Chart.defaults.plugins.tooltip.backgroundColor = "#0d1117";
+Chart.defaults.plugins.tooltip.backgroundColor = "#151513";
 Chart.defaults.plugins.tooltip.borderColor = "rgba(255,255,255,0.12)";
 Chart.defaults.plugins.tooltip.borderWidth = 1;
 Chart.defaults.plugins.tooltip.titleColor = INK;
@@ -103,7 +103,7 @@ function baseScales({ yTitle, reverse = false, stacked = false, yMin, yMax, fmt 
       stacked,
       grid: { display: false },
       ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: 16, color: INK3 },
-      border: { color: "#313a48" },
+      border: { color: "#34342f" },
     },
     y: {
       stacked,

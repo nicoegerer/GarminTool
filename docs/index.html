@@ -6,24 +6,56 @@
   <title>GarminTool · Trainings-Dashboard</title>
   <meta name="description" content="Persönliches Trainings-Dashboard mit Garmin-Daten: Trainingsvorschlag, Streaks, Form- und Gesundheitstrends.">
   <meta name="robots" content="noindex">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230b0e14'/%3E%3Cpath d='M14 58 L32 58 L42 30 L56 74 L66 47 L72 58 L86 58' stroke='%233987e5' stroke-width='9' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230f0f0f'/%3E%3Cpath d='M14 58 L32 58 L42 30 L56 74 L66 47 L72 58 L86 58' stroke='%236FC98A' stroke-width='9' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./css/style.css?v=1">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./css/style.css?v=2">
 </head>
 <body>
 
+<!-- ============ NAVIGATION ============ -->
+<div class="nav-backdrop" id="nav-backdrop"></div>
+<nav class="nav-drawer" id="nav-drawer" aria-label="Hauptnavigation">
+  <div class="nav-head">
+    <span class="nav-name">Nico</span>
+    <button class="nav-close" id="nav-close" aria-label="Menü schließen">✕</button>
+  </div>
+  <div class="nav-links">
+    <a href="#sec-heute">Heute</a>
+    <a href="#sec-konsistenz">Konsistenz</a>
+    <a href="#sec-letzte">Letzte Einheiten</a>
+    <a href="#sec-form">Form &amp; Fitness</a>
+    <a href="#sec-race">Prognosen</a>
+    <a href="#sec-tempo">Tempo</a>
+    <a href="#sec-gesundheit">Gesundheit</a>
+    <a href="#sec-kraft">Kraft</a>
+    <a href="#sec-rekorde">Rekorde</a>
+    <a href="#sec-badges">Abzeichen</a>
+  </div>
+  <div class="nav-foot">
+    <a href="https://nicoegerer.de/" target="_blank" rel="noopener">nicoegerer.de ↗</a>
+  </div>
+</nav>
+
 <header class="topbar">
   <div class="topbar-inner">
-    <div class="brand">
-      <svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="22" fill="#131a26"/><path d="M14 58 L32 58 L42 30 L56 74 L66 47 L72 58 L86 58" stroke="#3987e5" stroke-width="9" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <div>
-        <div class="brand-name">GarminTool</div>
-        <div class="brand-sub" id="brand-sub">Trainings-Dashboard</div>
+    <div class="topbar-left">
+      <button class="burger" id="burger" aria-label="Menü öffnen">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="22" fill="rgba(255,255,255,0.06)"/><path d="M14 58 L32 58 L42 30 L56 74 L66 47 L72 58 L86 58" stroke="#6FC98A" stroke-width="9" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div>
+          <div class="brand-name">GarminTool</div>
+          <div class="brand-sub" id="brand-sub">Trainings-Dashboard</div>
+        </div>
       </div>
     </div>
-    <div class="topbar-meta" id="topbar-meta"></div>
+    <button class="refresh-btn" id="refresh-btn">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+      <span id="refresh-label">Daten aktualisieren</span>
+    </button>
   </div>
 </header>
 
@@ -31,9 +63,9 @@
 
   <!-- ============ HEUTE ============ -->
   <section class="section" id="sec-heute">
-    <div class="section-head">
-      <span class="kicker">Heute</span>
-      <h2 id="today-title">Dein Tag</h2>
+    <div class="section-head hero-head">
+      <h2 class="greeting" id="greeting">Hallo, Nico.</h2>
+      <p class="greeting-sub" id="greeting-sub"></p>
     </div>
 
     <div class="hero-grid">
@@ -156,15 +188,77 @@
   <footer class="footer" id="footer"></footer>
 </main>
 
+<!-- ============ ATLAS (KI-Assistent) ============ -->
+<button class="atlas-fab" id="atlas-fab" aria-label="ATLAS öffnen">
+  <span class="atlas-core"></span>
+</button>
+
+<aside class="atlas-panel" id="atlas-panel" aria-label="ATLAS – KI-Trainingsassistent">
+  <div class="atlas-head">
+    <div class="atlas-identity">
+      <span class="atlas-orb"></span>
+      <div>
+        <div class="atlas-name">ATLAS</div>
+        <div class="atlas-status" id="atlas-status">Bereit</div>
+      </div>
+    </div>
+    <div class="atlas-actions">
+      <button class="atlas-icon-btn" id="atlas-settings" title="API-Key ändern">⚙</button>
+      <button class="atlas-icon-btn" id="atlas-close" title="Schließen">✕</button>
+    </div>
+  </div>
+  <div class="atlas-messages" id="atlas-messages"></div>
+  <div class="atlas-chips" id="atlas-chips"></div>
+  <form class="atlas-input" id="atlas-form">
+    <input type="text" id="atlas-text" placeholder="Frag mich etwas, Nico …" autocomplete="off">
+    <button type="submit" aria-label="Senden">➤</button>
+  </form>
+</aside>
+
+<!-- ============ Modals ============ -->
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal" id="modal-refresh" hidden>
+    <h3>Daten von der Uhr aktualisieren</h3>
+    <p>Der Button startet den GitHub-Workflow, der frische Daten aus Garmin Connect zieht
+      und die Seite neu veröffentlicht (Dauer: ~2–3 Minuten).</p>
+    <p>Dafür braucht es einmalig einen <strong>GitHub-Token</strong> (Fine-grained PAT,
+      Repo <code>GarminTool</code>, Berechtigung „Actions: Read and write“).
+      <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Token erstellen ↗</a></p>
+    <p class="modal-note">Der Token wird nur lokal in diesem Browser gespeichert (localStorage) und
+      ausschließlich an api.github.com gesendet.</p>
+    <input type="password" id="gh-token-input" placeholder="github_pat_…">
+    <div class="modal-btns">
+      <button class="ghost-btn" id="modal-refresh-cancel">Abbrechen</button>
+      <button class="solid-btn" id="modal-refresh-save">Speichern &amp; aktualisieren</button>
+    </div>
+  </div>
+
+  <div class="modal" id="modal-key" hidden>
+    <h3>ATLAS aktivieren</h3>
+    <p>ATLAS nutzt die Claude-API von Anthropic. Dafür braucht es einmalig deinen
+      <strong>Anthropic API-Key</strong>.
+      <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">Key erstellen ↗</a></p>
+    <p class="modal-note">Der Key wird nur lokal in diesem Browser gespeichert (localStorage) und
+      ausschließlich an api.anthropic.com gesendet.</p>
+    <input type="password" id="claude-key-input" placeholder="sk-ant-…">
+    <div class="modal-btns">
+      <button class="ghost-btn" id="modal-key-cancel">Abbrechen</button>
+      <button class="solid-btn" id="modal-key-save">Speichern</button>
+    </div>
+  </div>
+</div>
+
 <div class="loading" id="loading">
   <div class="loading-pulse"></div>
   <p>Lade Trainingsdaten …</p>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="./js/data.js?v=1"></script>
-<script src="./js/reco.js?v=1"></script>
-<script src="./js/charts.js?v=1"></script>
-<script src="./js/app.js?v=1"></script>
+<script src="./js/data.js?v=2"></script>
+<script src="./js/reco.js?v=2"></script>
+<script src="./js/charts.js?v=2"></script>
+<script src="./js/app.js?v=2"></script>
+<script src="./js/refresh.js?v=2"></script>
+<script src="./js/assistant.js?v=2"></script>
 </body>
 </html>

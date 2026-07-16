@@ -27,23 +27,36 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("loading").classList.add("done");
 });
 
-/* ---------- Topbar & Kopf ---------- */
+/* ---------- Topbar, Begrüßung & Navigation ---------- */
 
 function renderTopbar() {
-  const meta = document.getElementById("topbar-meta");
-  const gen = DATA.manifest && DATA.manifest.generated_at;
-  const name = (DATA.profile && DATA.profile.full_name) || "";
-  const primary = ((DATA.profile && DATA.profile.devices) || []).find((d) => d.primary);
+  const name = (DATA.profile && DATA.profile.full_name) || "Nico";
+  document.getElementById("brand-sub").textContent = `${name} · Trainings-Dashboard`;
 
-  document.getElementById("brand-sub").textContent = name ? `${name} · Trainings-Dashboard` : "Trainings-Dashboard";
-  const chips = [];
-  if (primary) chips.push(`<span class="meta-chip">⌚ ${primary.name}</span>`);
-  if (gen) chips.push(`<span class="meta-chip">Stand: ${fmtDateLong(gen.slice(0, 10))}</span>`);
-  meta.innerHTML = chips.join("");
+  // Persönliche Begrüßung nach Uhrzeit des Betrachters
+  const h = new Date().getHours();
+  const wort = h < 5 ? "Gute Nacht" : h < 11 ? "Guten Morgen" : h < 14 ? "Guten Tag" : h < 18 ? "Servus" : "Guten Abend";
+  document.getElementById("greeting").innerHTML = `${wort}, <em>${name}</em>.`;
 
   const t = parseDate(DATA.today);
-  document.getElementById("today-title").textContent =
-    t.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" });
+  const gen = DATA.manifest && DATA.manifest.generated_at;
+  const dateStr = t.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" });
+  document.getElementById("greeting-sub").textContent =
+    `${dateStr}${gen ? ` · Datenstand ${new Date(gen).toLocaleString("de-DE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} Uhr` : ""}`;
+
+  setupNav();
+}
+
+function setupNav() {
+  const drawer = document.getElementById("nav-drawer");
+  const backdrop = document.getElementById("nav-backdrop");
+  const open = () => { drawer.classList.add("is-open"); backdrop.classList.add("is-open"); };
+  const close = () => { drawer.classList.remove("is-open"); backdrop.classList.remove("is-open"); };
+  document.getElementById("burger").addEventListener("click", open);
+  document.getElementById("nav-close").addEventListener("click", close);
+  backdrop.addEventListener("click", close);
+  drawer.querySelectorAll("a[href^='#']").forEach((a) => a.addEventListener("click", close));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
 }
 
 /* ---------- Heute: Empfehlung + KPIs ---------- */
