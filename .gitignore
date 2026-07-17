@@ -11,3 +11,9 @@ dist/
 frontend/dist/
 *.egg-info/
 .pytest_cache/
+
+# Next.js app
+app/node_modules/
+app/.next/
+app/out/
+app/public/data/

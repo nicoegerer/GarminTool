@@ -1,0 +1,289 @@
+@import "tailwindcss";
+
+/* ============================================================
+   GarminTool Design System
+   Palette: Creme / Sand / Anthrazit / Schwarz, Gold als einziger
+   echter Akzent. Sportfarben gedeckt und nur für Daten.
+   ============================================================ */
+
+:root {
+  /* Flächen — Light: warmes Off-White, kein Reinweiß */
+  --bg: 42 33% 96%;
+  --bg-deep: 40 24% 92%;
+  --surface: 0 0% 100%;
+  --surface-2: 42 20% 97%;
+
+  /* Tinte */
+  --ink: 24 10% 10%;
+  --ink-2: 25 6% 38%;
+  --ink-3: 25 5% 56%;
+
+  /* Chrome */
+  --line: 30 12% 87%;
+  --line-soft: 30 12% 91%;
+
+  /* Akzent — Gold, sehr sparsam */
+  --gold: 38 52% 46%;
+  --gold-soft: 38 60% 92%;
+
+  /* Status */
+  --positive: 152 38% 36%;
+  --negative: 8 55% 50%;
+  --caution: 32 62% 48%;
+
+  /* Sportfarben — gedeckt, nicht knallig */
+  --sport-run: 18 48% 48%;
+  --sport-ride: 210 38% 42%;
+  --sport-swim: 188 36% 38%;
+  --sport-gym: 265 22% 46%;
+  --sport-hike: 92 26% 36%;
+  --sport-walk: 40 20% 50%;
+  --sport-other: 25 6% 48%;
+
+  --radius: 1.25rem;
+  --radius-sm: 0.75rem;
+
+  color-scheme: light;
+}
+
+.dark {
+  --bg: 30 8% 6%;
+  --bg-deep: 25 8% 4%;
+  --surface: 30 7% 10%;
+  --surface-2: 30 7% 13%;
+
+  --ink: 40 30% 96%;
+  --ink-2: 38 10% 68%;
+  --ink-3: 35 7% 48%;
+
+  --line: 35 8% 20%;
+  --line-soft: 35 8% 15%;
+
+  --gold: 40 62% 62%;
+  --gold-soft: 40 40% 16%;
+
+  --positive: 152 40% 55%;
+  --negative: 8 60% 62%;
+  --caution: 36 70% 58%;
+
+  --sport-run: 18 55% 60%;
+  --sport-ride: 210 50% 62%;
+  --sport-swim: 188 42% 55%;
+  --sport-gym: 265 32% 66%;
+  --sport-hike: 92 30% 52%;
+  --sport-walk: 40 26% 62%;
+  --sport-other: 35 7% 55%;
+
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: hsl(var(--bg));
+  --color-bg-deep: hsl(var(--bg-deep));
+  --color-surface: hsl(var(--surface));
+  --color-surface-2: hsl(var(--surface-2));
+
+  --color-ink: hsl(var(--ink));
+  --color-ink-2: hsl(var(--ink-2));
+  --color-ink-3: hsl(var(--ink-3));
+
+  --color-line: hsl(var(--line));
+  --color-line-soft: hsl(var(--line-soft));
+
+  --color-gold: hsl(var(--gold));
+  --color-gold-soft: hsl(var(--gold-soft));
+
+  --color-positive: hsl(var(--positive));
+  --color-negative: hsl(var(--negative));
+  --color-caution: hsl(var(--caution));
+
+  --color-sport-run: hsl(var(--sport-run));
+  --color-sport-ride: hsl(var(--sport-ride));
+  --color-sport-swim: hsl(var(--sport-swim));
+  --color-sport-gym: hsl(var(--sport-gym));
+  --color-sport-hike: hsl(var(--sport-hike));
+  --color-sport-walk: hsl(var(--sport-walk));
+  --color-sport-other: hsl(var(--sport-other));
+
+  --radius-card: var(--radius);
+  --radius-tile: var(--radius-sm);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --text-display: 3rem;
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.03em;
+  --text-title: 1.75rem;
+  --text-title--line-height: 1.2;
+  --text-title--letter-spacing: -0.02em;
+  --text-metric: 2.25rem;
+  --text-metric--line-height: 1;
+  --text-metric--letter-spacing: -0.03em;
+
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: hsl(var(--bg));
+    color: hsl(var(--ink));
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  ::selection {
+    background: hsl(var(--gold) / 0.22);
+  }
+
+  /* Zahlen in Spalten/Achsen ausrichten; große Einzelzahlen bleiben proportional */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  .card {
+    background-color: hsl(var(--surface));
+    border: 1px solid hsl(var(--line-soft));
+    border-radius: var(--radius);
+    box-shadow:
+      0 1px 2px hsl(var(--ink) / 0.03),
+      0 8px 24px -12px hsl(var(--ink) / 0.08);
+  }
+
+  .dark .card {
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.3),
+      0 12px 32px -16px rgb(0 0 0 / 0.5);
+  }
+
+  .card-interactive {
+    transition:
+      transform 0.35s var(--ease-out-quint),
+      box-shadow 0.35s var(--ease-out-quint),
+      border-color 0.35s var(--ease-out-quint);
+    cursor: pointer;
+  }
+
+  .card-interactive:hover {
+    transform: translateY(-3px);
+    border-color: hsl(var(--line));
+    box-shadow:
+      0 2px 4px hsl(var(--ink) / 0.04),
+      0 18px 44px -16px hsl(var(--ink) / 0.16);
+  }
+
+  .dark .card-interactive:hover {
+    box-shadow:
+      0 2px 4px rgb(0 0 0 / 0.4),
+      0 22px 52px -20px rgb(0 0 0 / 0.7);
+  }
+
+  .card-interactive:active {
+    transform: translateY(-1px);
+    transition-duration: 0.1s;
+  }
+
+  .kicker {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: hsl(var(--ink-3));
+  }
+}
+
+/* ============================================================
+   Hintergrund: Aurora-Mesh + Noise — bewusst subtil und langsam.
+   ============================================================ */
+
+.aurora {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.aurora::before,
+.aurora::after {
+  content: "";
+  position: absolute;
+  width: 60vw;
+  height: 60vw;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.5;
+}
+
+.aurora::before {
+  top: -18vw;
+  right: -12vw;
+  background: radial-gradient(circle, hsl(var(--gold) / 0.16), transparent 66%);
+  animation: aurora-drift-a 32s ease-in-out infinite alternate;
+}
+
+.aurora::after {
+  bottom: -22vw;
+  left: -14vw;
+  background: radial-gradient(circle, hsl(var(--sport-ride) / 0.12), transparent 66%);
+  animation: aurora-drift-b 38s ease-in-out infinite alternate;
+}
+
+.dark .aurora::before { opacity: 0.42; }
+.dark .aurora::after { opacity: 0.34; }
+
+@keyframes aurora-drift-a {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(-6vw, 5vw, 0) scale(1.14); }
+}
+
+@keyframes aurora-drift-b {
+  from { transform: translate3d(0, 0, 0) scale(1.08); }
+  to   { transform: translate3d(7vw, -4vw, 0) scale(1); }
+}
+
+/* Feines Noise gegen Banding in den Verläufen */
+.noise {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.028;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.dark .noise { opacity: 0.05; }
+
+/* Glass nur für schwebende Leisten */
+.glass {
+  background-color: hsl(var(--bg) / 0.72);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--line));
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: hsl(var(--ink-3)); background-clip: content-box; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
