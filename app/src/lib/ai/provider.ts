@@ -1,11 +1,12 @@
 /**
  * Provider-agnostic chat interface.
  *
- * Everything above this file (coach, chat UI) talks only to `AiProvider`, so a
- * new model is one adapter + one registry entry — no call sites change.
+ * There is exactly one provider today (Gemini — the only free option that
+ * works on both phone and desktop). The interface stays so a swap is one
+ * adapter file plus one registry entry, with no call sites touched.
  */
 
-export type ProviderId = "gemini" | "ollama";
+export type ProviderId = "gemini";
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -25,7 +26,7 @@ export interface AiProvider {
   readonly label: string;
   /** Where the user's data goes — surfaced in the settings UI. */
   readonly privacyNote: string;
-  /** Whether the adapter has what it needs (key / reachable host). */
+  /** Whether the adapter has what it needs. */
   isConfigured(cfg: ProviderConfig): boolean;
   /** Streams the reply in chunks. Throws `AiError` on failure. */
   stream(req: ChatRequest, cfg: ProviderConfig): AsyncGenerator<string, void, unknown>;
@@ -37,16 +38,12 @@ export interface ProviderConfig {
   provider: ProviderId;
   geminiKey: string;
   geminiModel: string;
-  ollamaUrl: string;
-  ollamaModel: string;
 }
 
 export const DEFAULT_CONFIG: ProviderConfig = {
   provider: "gemini",
   geminiKey: "",
   geminiModel: "gemini-2.0-flash",
-  ollamaUrl: "http://localhost:11434",
-  ollamaModel: "llama3.1",
 };
 
 export class AiError extends Error {

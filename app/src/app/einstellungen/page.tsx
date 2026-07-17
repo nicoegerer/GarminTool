@@ -27,64 +27,36 @@ export default function SettingsPage() {
     <>
       <PageHeader kicker="Einstellungen" title="Konfiguration" />
 
-      {/* ---- KI-Provider ---- */}
+      {/* ---- KI ---- */}
       <Card className="mb-4 p-6">
-        <h2 className="text-base font-semibold">KI-Modell</h2>
-        <p className="mt-1 text-[13px] text-ink-3">Welches Modell den Coach antreibt. Jederzeit umschaltbar.</p>
+        <h2 className="text-base font-semibold">KI-Coach</h2>
+        <p className="mt-1 text-[13px] text-ink-3">
+          Läuft über Google Gemini — kostenloses Kontingent, funktioniert auf Handy und Rechner.
+        </p>
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-2">
-          {PROVIDER_LIST.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => patch({ provider: p.id as ProviderId })}
-              className={cn(
-                "rounded-2xl border p-4 text-left transition-colors",
-                cfg.provider === p.id ? "border-gold/50 bg-gold/8" : "border-line-soft hover:border-line",
-              )}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-medium">{p.label}</span>
-                {cfg.provider === p.id && <Check className="size-4 text-gold" strokeWidth={2.4} />}
-              </div>
-              <p className="mt-1 text-xs leading-snug text-ink-3">{p.privacyNote}</p>
-            </button>
-          ))}
+        <div className="mt-5 space-y-4">
+          <Field
+            label="Google API-Key"
+            type="password"
+            value={cfg.geminiKey}
+            onChange={(v) => patch({ geminiKey: v })}
+            placeholder="AIza…"
+            help={
+              <>
+                Kostenlos erstellen bei{" "}
+                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-gold hover:underline">
+                  Google AI Studio <ExternalLink className="inline size-3" />
+                </a>
+              </>
+            }
+          />
+          <ModelPicker cfg={cfg} onPick={(m) => patch({ geminiModel: m })} current={cfg.geminiModel} />
         </div>
 
-        {cfg.provider === "gemini" ? (
-          <div className="mt-5 space-y-4 border-t border-line-soft pt-5">
-            <Field
-              label="Google API-Key"
-              type="password"
-              value={cfg.geminiKey}
-              onChange={(v) => patch({ geminiKey: v })}
-              placeholder="AIza…"
-              help={
-                <>
-                  Kostenloses Kontingent bei{" "}
-                  <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-gold hover:underline">
-                    Google AI Studio <ExternalLink className="inline size-3" />
-                  </a>
-                </>
-              }
-            />
-            <ModelPicker cfg={cfg} onPick={(m) => patch({ geminiModel: m })} current={cfg.geminiModel} />
-          </div>
-        ) : (
-          <div className="mt-5 space-y-4 border-t border-line-soft pt-5">
-            <Field label="Ollama-Adresse" value={cfg.ollamaUrl} onChange={(v) => patch({ ollamaUrl: v })} placeholder="http://localhost:11434" />
-            <ModelPicker cfg={cfg} onPick={(m) => patch({ ollamaModel: m })} current={cfg.ollamaModel} />
-            <p className="rounded-xl border border-line-soft bg-surface-2 p-3.5 text-xs leading-relaxed text-ink-3">
-              Ollama läuft nur auf deinem Rechner — auf dem Handy ist der Coach damit nicht erreichbar. Damit diese
-              Seite Ollama ansprechen darf, muss die Umgebungsvariable{" "}
-              <code className="rounded bg-surface px-1 py-0.5">OLLAMA_ORIGINS</code> die Domain dieser Seite enthalten.
-            </p>
-          </div>
-        )}
-
-        <p className="mt-5 flex items-start gap-2 text-xs text-ink-3">
+        <p className="mt-5 flex items-start gap-2 text-xs leading-relaxed text-ink-3">
           <ShieldCheck className="mt-px size-3.5 shrink-0" strokeWidth={1.8} />
-          Keys werden ausschließlich lokal in diesem Browser gespeichert und nie ins Repo geschrieben.
+          Der Key bleibt in diesem Browser und geht nur an Google. Deine Trainingsdaten werden für jede Antwort an
+          Gemini übertragen.
         </p>
       </Card>
 

@@ -1,9 +1,9 @@
 "use client";
 
 import { ChevronRight } from "lucide-react";
-import { motion } from "motion/react";
+import { motion, useInView, useSpring, useTransform } from "motion/react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { cn } from "@/lib/format";
-import type { ReactNode } from "react";
 
 /**
  * The dashboard's atom: one number, minimal context, opens a detail sheet.
@@ -19,9 +19,14 @@ export function MetricCard({
   onClick,
   delay = 0,
   accent,
+  icon,
+  animate = false,
+  digits = 0,
+  signed = false,
 }: {
   label: string;
-  value: ReactNode;
+  /** Pre-formatted string. With `animate`, it must parse as a number. */
+  value: string;
   unit?: string;
   delta?: { text: string; tone: "up" | "down" | "flat" };
   hint?: string;
@@ -29,6 +34,11 @@ export function MetricCard({
   onClick?: () => void;
   delay?: number;
   accent?: string;
+  icon?: ReactNode;
+  /** Counts up when scrolled into view. */
+  animate?: boolean;
+  digits?: number;
+  signed?: boolean;
 }) {
   return (
     <motion.button
@@ -38,10 +48,7 @@ export function MetricCard({
       transition={{ duration: 0.4, delay, ease: [0.22, 1, 0.36, 1] }}
       onClick={onClick}
       disabled={!onClick}
-      className={cn(
-        "card group relative flex flex-col justify-between gap-3 p-5 text-left",
-        onClick && "card-interactive",
-      )}
+      className={cn("card group relative flex flex-col justify-between gap-3 p-5 text-left", onClick && "card-interactive")}
     >
       <div className="flex items-start justify-between gap-2">
         <p className="text-[13px] leading-tight text-ink-3">{label}</p>
@@ -51,8 +58,9 @@ export function MetricCard({
       </div>
 
       <div>
-        <p className="flex items-baseline gap-1 text-[1.75rem] font-semibold leading-none tracking-[-0.03em]">
-          {value}
+        <p className="flex items-baseline gap-1.5 text-[1.75rem] font-semibold leading-none tracking-[-0.03em]">
+          {icon}
+          {animate ? <CountUp value={parseGerman(value)} digits={digits} signed={signed} /> : value}
           {unit && <span className="text-sm font-medium text-ink-3">{unit}</span>}
         </p>
         {delta && (
@@ -70,10 +78,34 @@ export function MetricCard({
         {hint && !delta && <p className="mt-1.5 text-xs text-ink-3">{hint}</p>}
       </div>
 
-      {spark && spark.filter((v) => v != null).length > 1 && (
-        <Sparkline values={spark} color={accent ?? "hsl(var(--ink-3))"} />
-      )}
+      {spark && spark.filter((v) => v != null).length > 1 && <Sparkline values={spark} color={accent ?? "hsl(var(--ink-3))"} />}
     </motion.button>
+  );
+}
+
+/** "1.234,5" → 1234.5 — the values arrive already localised. */
+function parseGerman(s: string): number {
+  const n = Number(s.replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function CountUp({ value, digits, signed }: { value: number; digits: number; signed: boolean }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const inView = useInView(ref, { once: true, margin: "-30px" });
+  const spring = useSpring(0, { stiffness: 60, damping: 17, mass: 0.7 });
+  const text = useTransform(spring, (v) => {
+    const s = v.toLocaleString("de-DE", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    return signed && v > 0 ? `+${s}` : s;
+  });
+
+  useEffect(() => {
+    if (inView) spring.set(value);
+  }, [inView, value, spring]);
+
+  return (
+    <span ref={ref} className="tabular-nums">
+      <motion.span>{text}</motion.span>
+    </span>
   );
 }
 

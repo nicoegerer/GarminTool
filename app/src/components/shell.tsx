@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { NAV, PRIMARY_NAV } from "@/lib/nav";
 import { cn } from "@/lib/format";
 import { useTheme } from "./theme";
 import { RefreshButton } from "./refresh-button";
+import { Background } from "./background";
 import type { ReactNode } from "react";
 
 function isActive(pathname: string, href: string) {
@@ -170,8 +171,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   return (
     <>
-      <div className="aurora" aria-hidden />
-      <div className="noise" aria-hidden />
+      <Background />
 
       <Sidebar />
       <MobileHeader />
@@ -183,17 +183,20 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
 
         <main className="mx-auto min-h-screen w-full max-w-6xl px-4 pb-24 pt-4 lg:px-8 lg:pb-16 lg:pt-0">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={pathname}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            >
-              {children}
-            </motion.div>
-          </AnimatePresence>
+          {/*
+            Enter-only page transition, keyed by route: remounting on `key`
+            replays the fade-in. No <AnimatePresence> — it doesn't unmount its
+            children in this stack, which would stack dead pages on every
+            navigation (see lib/use-mount-transition).
+          */}
+          <motion.div
+            key={pathname}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {children}
+          </motion.div>
         </main>
       </div>
 

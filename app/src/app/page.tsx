@@ -6,10 +6,15 @@ import { ArrowRight, Flame } from "lucide-react";
 import { useData, useGarmin, useStreaks, useVo2max } from "@/lib/data";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { FormSheet, RaceSheet, Vo2maxSheet } from "@/components/dashboard/detail-sheets";
+import { RhrSheet, SleepSheet, StreakSheet, WeekSheet } from "@/components/dashboard/health-sheets";
+import { ActivitySheet } from "@/components/dashboard/activity-sheet";
 import { Card, Empty, PageHeader, Skeleton } from "@/components/ui/primitives";
-import { themeToken as chartToken } from "@/lib/theme-tokens";
+import { themeToken } from "@/lib/theme-tokens";
 import { fmtDur, fmtKm, fmtNum, fmtTime, median } from "@/lib/format";
 import { SPORT_META, typeLabel } from "@/lib/sports";
+import type { Activity } from "@/lib/types";
+
+type SheetId = "form" | "ctl" | "vo2" | "race" | "streak" | "week" | "rhr" | "sleep";
 
 export default function DashboardPage() {
   const { loading, error } = useData();
@@ -22,7 +27,8 @@ function Dashboard() {
   const data = useGarmin();
   const streaks = useStreaks();
   const vo2 = useVo2max();
-  const [sheet, setSheet] = useState<"form" | "vo2" | "race" | null>(null);
+  const [sheet, setSheet] = useState<SheetId | null>(null);
+  const [activity, setActivity] = useState<Activity | null>(null);
 
   const last = data.loadTrend.at(-1);
   const greeting = useMemo(() => {
@@ -49,17 +55,17 @@ function Dashboard() {
         }
       />
 
-      {/* Coach-Einstieg: die KI ist der Kern, nicht ein Feature am Rand */}
+      {/* Coach: die KI ist der Kern, nicht ein Feature am Rand */}
       <Card className="mb-5 overflow-hidden p-0">
         <Link href="/coach" className="group flex items-center gap-5 p-6">
           <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-gold/12">
-            <span className="size-2.5 rounded-full bg-gold shadow-[0_0_12px_hsl(var(--gold))]" />
+            <span className="size-2.5 animate-pulse rounded-full bg-gold shadow-[0_0_14px_hsl(var(--gold))]" />
           </span>
           <div className="min-w-0 flex-1">
             <p className="kicker mb-1">Dein Coach</p>
             <p className="text-[15px] font-medium leading-snug">
               {streaks.thisWeekCount === 0
-                ? "Diese Woche noch nichts gelaufen. Lass uns schauen, was heute Sinn ergibt."
+                ? "Diese Woche noch nichts. Lass uns schauen, was heute Sinn ergibt."
                 : `Was heute ansteht — auf Basis deiner ${data.activities.length} Einheiten.`}
             </p>
           </div>
@@ -71,10 +77,12 @@ function Dashboard() {
         {last && (
           <MetricCard
             label="Form (TSB)"
-            value={`${last.tsb > 0 ? "+" : ""}${fmtNum(last.tsb)}`}
+            value={fmtNum(last.tsb)}
+            animate
+            signed
             hint={last.tsb >= 5 ? "Frisch" : last.tsb >= -10 ? "Neutral" : last.tsb >= -25 ? "Belastet" : "Stark belastet"}
             spark={data.loadTrend.slice(-42).map((r) => r.tsb)}
-            accent={chartToken("--gold")}
+            accent={themeToken("--gold")}
             onClick={() => setSheet("form")}
             delay={0.02}
           />
@@ -83,10 +91,11 @@ function Dashboard() {
           <MetricCard
             label="Fitness (CTL)"
             value={fmtNum(last.ctl)}
+            animate
             delta={ctlDelta(data.loadTrend)}
             spark={data.loadTrend.slice(-90).map((r) => r.ctl)}
-            accent={chartToken("--sport-ride")}
-            onClick={() => setSheet("form")}
+            accent={themeToken("--sport-ride")}
+            onClick={() => setSheet("ctl")}
             delay={0.05}
           />
         )}
@@ -94,9 +103,11 @@ function Dashboard() {
           <MetricCard
             label="VO₂max"
             value={vo2.at(-1)!.vo2max.toFixed(1)}
+            animate
+            digits={1}
             hint="ml/kg/min"
             spark={vo2.slice(-20).map((v) => v.vo2max)}
-            accent={chartToken("--sport-ride")}
+            accent={themeToken("--sport-ride")}
             onClick={() => setSheet("vo2")}
             delay={0.08}
           />
@@ -115,27 +126,28 @@ function Dashboard() {
       <div className="mt-3 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <MetricCard
           label="Wochen-Serie"
-          value={
-            <span className="flex items-center gap-1.5">
-              <Flame className="size-5 text-gold" strokeWidth={2} />
-              {streaks.currentWeekStreak}
-            </span>
-          }
+          value={`${streaks.currentWeekStreak}`}
+          animate
+          icon={<Flame className="size-5 text-gold" strokeWidth={2} />}
           unit="Wochen"
           hint={`Rekord: ${streaks.longestWeekStreak}`}
+          onClick={() => setSheet("streak")}
           delay={0.14}
         />
         <MetricCard
           label="Diese Woche"
-          value={streaks.thisWeekCount}
+          value={`${streaks.thisWeekCount}`}
+          animate
           unit="Einheiten"
           hint={fmtDur(streaks.thisWeekDuration, { short: true })}
+          onClick={() => setSheet("week")}
           delay={0.17}
         />
         {rhrLast && (
           <MetricCard
             label="Ruhepuls"
-            value={rhrLast.values.restingHR!}
+            value={`${rhrLast.values.restingHR}`}
+            animate
             unit="bpm"
             delta={
               rhrBase
@@ -146,24 +158,27 @@ function Dashboard() {
                 : undefined
             }
             spark={rhrRows.slice(-30).map((r) => r.values.restingHR)}
-            accent={chartToken("--sport-run")}
+            accent={themeToken("--sport-run")}
+            onClick={() => setSheet("rhr")}
             delay={0.2}
           />
         )}
         {sleepLast && (
           <MetricCard
             label="Schlaf"
-            value={sleepLast.score ?? "–"}
+            value={sleepLast.score ? `${sleepLast.score}` : "–"}
+            animate={Boolean(sleepLast.score)}
             unit={sleepLast.score ? "/100" : undefined}
             hint={fmtDur(sleepLast.total_s, { short: true })}
             spark={(data.daily.sleep_scores ?? []).slice(-14).map((s) => s.score)}
-            accent={chartToken("--sport-gym")}
+            accent={themeToken("--sport-gym")}
+            onClick={() => setSheet("sleep")}
             delay={0.23}
           />
         )}
       </div>
 
-      {/* Letzte Einheiten: nur ein Anriss, Tiefe auf der Aktivitätenseite */}
+      {/* Letzte Einheiten: nur ein Anriss, jede Karte öffnet die Volldaten */}
       <section className="mt-8">
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="text-lg font-semibold tracking-[-0.01em]">Zuletzt trainiert</h2>
@@ -179,8 +194,8 @@ function Dashboard() {
               const meta = SPORT_META[a.group];
               const Icon = meta.icon;
               return (
-                <Card key={a.activityId} delay={0.26 + i * 0.03} className="p-0">
-                  <Link href={`/aktivitaeten/${a.activityId}`} className="flex items-center gap-3.5 p-4">
+                <Card key={a.activityId} delay={0.26 + i * 0.03} className="p-4" onClick={() => setActivity(a)}>
+                  <div className="flex items-center gap-3.5">
                     <span className={`grid size-10 shrink-0 place-items-center rounded-xl ${meta.bg}`}>
                       <Icon className={`size-[18px] ${meta.text}`} strokeWidth={1.9} />
                     </span>
@@ -191,7 +206,8 @@ function Dashboard() {
                         {a.distance ? ` · ${fmtKm(a.distance)}` : ""} · {fmtDur(a.duration, { short: true })}
                       </p>
                     </div>
-                  </Link>
+                    <ArrowRight className="size-4 shrink-0 text-ink-3 opacity-0 transition-opacity group-hover:opacity-100" strokeWidth={2} />
+                  </div>
                 </Card>
               );
             })}
@@ -199,9 +215,15 @@ function Dashboard() {
         )}
       </section>
 
-      <FormSheet open={sheet === "form"} onClose={() => setSheet(null)} />
+      {/* Jede Kachel hat ihr Detail */}
+      <FormSheet open={sheet === "form" || sheet === "ctl"} onClose={() => setSheet(null)} />
       <Vo2maxSheet open={sheet === "vo2"} onClose={() => setSheet(null)} />
       <RaceSheet open={sheet === "race"} onClose={() => setSheet(null)} />
+      <StreakSheet open={sheet === "streak"} onClose={() => setSheet(null)} />
+      <WeekSheet open={sheet === "week"} onClose={() => setSheet(null)} />
+      <RhrSheet open={sheet === "rhr"} onClose={() => setSheet(null)} />
+      <SleepSheet open={sheet === "sleep"} onClose={() => setSheet(null)} />
+      <ActivitySheet activity={activity} onClose={() => setActivity(null)} />
     </>
   );
 }

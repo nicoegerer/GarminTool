@@ -201,66 +201,41 @@
 }
 
 /* ============================================================
-   Hintergrund: Aurora-Mesh + Noise — bewusst subtil und langsam.
+   Hintergrund — die Bewegung selbst liegt in components/background.tsx.
+   Hier nur die Körnung, die das Banding der großen Blurs schluckt.
    ============================================================ */
 
-.aurora {
-  position: fixed;
-  inset: 0;
-  z-index: -2;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.aurora::before,
-.aurora::after {
-  content: "";
-  position: absolute;
-  width: 60vw;
-  height: 60vw;
-  border-radius: 50%;
-  filter: blur(90px);
-  opacity: 0.5;
-}
-
-.aurora::before {
-  top: -18vw;
-  right: -12vw;
-  background: radial-gradient(circle, hsl(var(--gold) / 0.16), transparent 66%);
-  animation: aurora-drift-a 32s ease-in-out infinite alternate;
-}
-
-.aurora::after {
-  bottom: -22vw;
-  left: -14vw;
-  background: radial-gradient(circle, hsl(var(--sport-ride) / 0.12), transparent 66%);
-  animation: aurora-drift-b 38s ease-in-out infinite alternate;
-}
-
-.dark .aurora::before { opacity: 0.42; }
-.dark .aurora::after { opacity: 0.34; }
-
-@keyframes aurora-drift-a {
-  from { transform: translate3d(0, 0, 0) scale(1); }
-  to   { transform: translate3d(-6vw, 5vw, 0) scale(1.14); }
-}
-
-@keyframes aurora-drift-b {
-  from { transform: translate3d(0, 0, 0) scale(1.08); }
-  to   { transform: translate3d(7vw, -4vw, 0) scale(1); }
-}
-
-/* Feines Noise gegen Banding in den Verläufen */
-.noise {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: 0.028;
+.noise-grain {
+  opacity: 0.03;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-.dark .noise { opacity: 0.05; }
+.dark .noise-grain { opacity: 0.055; }
+
+/* Scroll-Parallax: --parallax setzt background.tsx pro Frame. */
+.parallax {
+  transform: translate3d(0, var(--parallax, 0px), 0);
+  will-change: transform;
+}
+
+/* Lichtquellen: langsam driftend, damit es als Tiefe liest und nicht als Effekt.
+   Bewusst CSS statt JS — siehe components/background.tsx. */
+.orb {
+  will-change: transform;
+  animation: orb-drift 34s ease-in-out infinite alternate;
+}
+.orb-b { animation-duration: 44s; animation-name: orb-drift-b; }
+.orb-c { animation-duration: 39s; animation-delay: -12s; }
+
+@keyframes orb-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(-5vw, 4vw, 0) scale(1.12); }
+}
+
+@keyframes orb-drift-b {
+  from { transform: translate3d(0, 0, 0) scale(1.08); }
+  to   { transform: translate3d(6vw, -3vw, 0) scale(0.98); }
+}
 
 /* Glass nur für schwebende Leisten */
 .glass {
