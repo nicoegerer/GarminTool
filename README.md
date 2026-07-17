@@ -5,6 +5,12 @@ als rein statische Seite, gehostet auf **GitHub Pages**.
 
 **Features**
 
+- 🤖 **ATLAS** — KI-Trainingsassistent (Jarvis-Stil) im Chat-Panel unten rechts. Kennt alle
+  Dashboard-Daten und beantwortet Fragen zu Training, Form und Erholung. Läuft über die
+  Claude-API mit deinem eigenen API-Key (nur im Browser-localStorage).
+- 🔄 **Daten aktualisieren** — Button im Header startet den GitHub-Workflow, der frische
+  Garmin-Daten zieht, und lädt die Seite neu, sobald sie live sind. Braucht einen
+  GitHub-Token (siehe unten).
 - 🎯 **Trainingsvorschlag für heute** — regelbasiert und erklärbar (Belastungsquote ACWR,
   Form/TSB, Schlaf, Body Battery, Ruhepuls-Abweichung, Garmin-Load-Balance, Reiz-Rotation,
   Sport-Rotation Laufen/Rad/Schwimmen). Jede Empfehlung nennt die Zahlen dahinter.
@@ -16,8 +22,8 @@ als rein statische Seite, gehostet auf **GitHub Pages**.
 - ❤️ **Gesundheit**: Ruhepuls, Schlaf-Score, Schlafphasen, Body Battery, Stress, Schritte,
   Intensitätsminuten.
 - 🏋️ **Krafttraining**, 🏅 **Persönliche Rekorde**, 🎖 **Abzeichen**.
-- Globaler Zeitraum-Filter (90 T / 180 T / 1 J / Alles), Tabellenansicht zu jedem Chart,
-  responsive, dunkles Design.
+- Burger-Menü zur Navigation, globaler Zeitraum-Filter (90 T / 180 T / 1 J / Alles),
+  Tabellenansicht zu jedem Chart, responsive, dunkles Design im Stil von nicoegerer.de.
 
 Sektionen ohne Daten (z. B. HRV-Status/Training Readiness, die der Forerunner 945 nicht liefert)
 werden automatisch ausgeblendet.
@@ -75,6 +81,24 @@ Dafür ein Repo-Secret **`GARMIN_TOKENS_JSON`** anlegen mit dem Inhalt der Datei
 - Das Secret ist ein Login-Token für dein Garmin-Konto — sorgsam behandeln.
 - Tokens laufen irgendwann ab; dann das Secret mit der aktuellen lokalen Datei erneuern.
 - Ohne Secret überspringt der Workflow den Export einfach.
+
+## Die zwei Buttons (Tokens einrichten)
+
+Beide Tokens werden **nur im localStorage deines Browsers** gespeichert und ausschließlich an
+den jeweiligen Anbieter geschickt — sie landen nie im Repo.
+
+| Button | Token | Wo erstellen |
+|---|---|---|
+| 🔄 Daten aktualisieren | GitHub Fine-grained PAT, nur Repo `GarminTool`, Berechtigung **Actions: Read and write** | [github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new) |
+| 🤖 ATLAS | Anthropic API-Key (`sk-ant-…`) | [platform.claude.com/settings/keys](https://platform.claude.com/settings/keys) |
+
+Beim ersten Klick fragt die Seite nach dem jeweiligen Token. Voraussetzung für den
+Refresh-Button ist zusätzlich das Repo-Secret `GARMIN_TOKENS_JSON` (siehe oben) — sonst
+überspringt der Workflow den Export.
+
+⚠️ ATLAS ruft die Claude-API direkt aus dem Browser auf (`anthropic-dangerous-direct-browser-access`).
+Das ist für ein Single-User-Dashboard mit deinem eigenen Key in Ordnung; teile die Seite nicht
+mit hinterlegtem Key auf einem fremden Gerät.
 
 ## Lokale Vorschau
 
