@@ -1,0 +1,64 @@
+name: Seite bauen & veröffentlichen
+
+# Baut die Next.js-App und deployt sie nach GitHub Pages.
+# Läuft bei jedem Push auf main — also auch, wenn der Refresh-Workflow
+# frische Garmin-Daten nach docs/data committet.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Ein Deploy zur Zeit; laufende nicht abbrechen, damit ein Daten-Refresh
+# mitten im Deploy nicht die Seite halb veröffentlicht zurücklässt.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Abhängigkeiten installieren
+        working-directory: app
+        run: npm ci
+
+      - name: Bauen
+        working-directory: app
+        # Projekt-Page liegt unter /GarminTool/, nicht im Wurzelverzeichnis.
+        env:
+          NEXT_PUBLIC_BASE_PATH: /GarminTool
+        run: npm run build
+
+      - name: Jekyll abschalten
+        # Ohne .nojekyll verschluckt Pages alle Ordner mit _ am Anfang
+        # (Next legt _next/ an) und die Seite bleibt ohne CSS und JS.
+        run: touch app/out/.nojekyll
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: app/out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

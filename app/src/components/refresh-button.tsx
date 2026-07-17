@@ -4,6 +4,7 @@ import { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { cn } from "@/lib/format";
 import { Modal } from "./ui/modal";
+import { dataUrl } from "@/lib/paths";
 
 const GH_REPO = "nicoegerer/GarminTool";
 const GH_WORKFLOW = "refresh-data.yml";
@@ -29,7 +30,7 @@ export function RefreshButton({ compact = false }: { compact?: boolean }) {
 
     let before: string | undefined;
     try {
-      before = (await (await fetch("/data/manifest.json", { cache: "no-store" })).json())?.generated_at;
+      before = (await (await fetch(dataUrl("manifest.json"), { cache: "no-store" })).json())?.generated_at;
     } catch {
       /* first run — no baseline to compare against */
     }
@@ -142,7 +143,7 @@ async function waitForNewData(before: string | undefined, onTick: (mins: number)
     await new Promise((r) => setTimeout(r, 15000));
     onTick(Math.round((Date.now() - start) / 60000));
     try {
-      const res = await fetch(`/data/manifest.json?ts=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(`${dataUrl("manifest.json")}?ts=${Date.now()}`, { cache: "no-store" });
       if (res.ok) {
         const m = (await res.json()) as { generated_at?: string };
         if (m.generated_at && m.generated_at !== before) return true;

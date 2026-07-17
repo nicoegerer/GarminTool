@@ -15,12 +15,11 @@ import type {
 } from "./types";
 import { clean, daysBetween, isoDate, parseDate, weekStart } from "./format";
 import { sportGroup } from "./sports";
-
-const BASE = "/data";
+import { dataUrl } from "./paths";
 
 async function loadJSON<T>(name: string, fallback: T): Promise<T> {
   try {
-    const res = await fetch(`${BASE}/${name}.json`, { cache: "force-cache" });
+    const res = await fetch(dataUrl(`${name}.json`), { cache: "force-cache" });
     if (!res.ok) return fallback;
     return (await res.json()) as T;
   } catch {
@@ -34,7 +33,7 @@ const detailCache = new Map<number, Promise<ActivityDetail | null>>();
 export function loadActivityDetail(id: number): Promise<ActivityDetail | null> {
   let p = detailCache.get(id);
   if (!p) {
-    p = fetch(`${BASE}/activity/${id}.json`, { cache: "force-cache" })
+    p = fetch(dataUrl(`activity/${id}.json`), { cache: "force-cache" })
       .then((r) => (r.ok ? (r.json() as Promise<ActivityDetail>) : null))
       .catch(() => null);
     detailCache.set(id, p);
