@@ -140,11 +140,28 @@ ACTIVITY_FIELDS = [
 
 def export_activities(client: Garmin) -> list[dict]:
     def fetch() -> list[dict]:
-        raw = client.get_activities_by_date("2010-01-01", TODAY.isoformat())
+        # Page through the activity-search endpoint instead of
+        # get_activities_by_date: the by-date index silently drops very recent
+        # or data-less activities (a short treadmill test with 0 distance never
+        # showed up), so a "refresh" right after a workout found nothing. The
+        # paginated list returns everything, newest first.
+        raw: list[dict] = []
+        seen: set[Any] = set()
+        start, page = 0, 100
+        while True:
+            batch = client.get_activities(start, page) or []
+            new = [a for a in batch if isinstance(a, dict)]
+            raw.extend(new)
+            if len(batch) < page or start > 10000:
+                break
+            start += page
+
         acts = []
-        for a in raw or []:
-            if not isinstance(a, dict):
+        for a in raw:
+            aid = a.get("activityId")
+            if aid in seen:
                 continue
+            seen.add(aid)
             slim = {k: a.get(k) for k in ACTIVITY_FIELDS if a.get(k) is not None}
             atype = a.get("activityType") or {}
             slim["typeKey"] = atype.get("typeKey")
