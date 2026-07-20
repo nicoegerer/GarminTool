@@ -52,6 +52,10 @@ jobs:
           # läuft. Auf einer öffentlichen Seite ist er damit im JS sichtbar —
           # bewusst so gewählt (begrenztes Risiko: nur Google-Kontingent).
           NEXT_PUBLIC_GEMINI_KEY: ${{ secrets.NEXT_PUBLIC_GEMINI_KEY }}
+          # Eng gescopeter Token (nur Actions:write auf DIESEM Repo), damit der
+          # Aktualisieren-Button einen Sofort-Abruf auslösen kann. Fehlt er,
+          # lädt der Button nur den neuesten veröffentlichten Stand.
+          NEXT_PUBLIC_DISPATCH_TOKEN: ${{ secrets.NEXT_PUBLIC_DISPATCH_TOKEN }}
         run: npm run build
 
       - name: Jekyll abschalten
