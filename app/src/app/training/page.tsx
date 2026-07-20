@@ -19,6 +19,8 @@ export default function TrainingPage() {
 }
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+/** Pixel height of the bar area; the busiest day fills it exactly. */
+const CHART_H = 104;
 
 function Training() {
   const { activities, today } = useGarmin();
@@ -84,35 +86,34 @@ function Training() {
           </button>
         </div>
 
-        {/* Balken je Tag, gestapelt nach Sportart */}
-        <div className="flex items-end gap-1.5" style={{ height: 120 }}>
-          {days.map((d) => {
-            const dayDur = d.items.reduce((s, a) => s + (a.duration ?? 0), 0);
-            return (
-              <div key={d.iso} className="flex flex-1 flex-col items-center gap-1.5">
-                <div className="flex w-full flex-1 flex-col justify-end gap-[2px]">
-                  {d.items.map((a) => (
-                    <button
-                      key={a.activityId}
-                      onClick={() => setActivity(a)}
-                      title={`${a.activityName || typeLabel(a.typeKey)} · ${fmtDur(a.duration, { short: true })}`}
-                      className="w-full rounded-[4px] transition-opacity hover:opacity-80"
-                      style={{
-                        height: `${Math.max(6, ((a.duration ?? 0) / maxDayDur) * 100)}%`,
-                        background: themeToken(SPORT_META[a.group].cssVar),
-                      }}
-                    />
-                  ))}
-                  {!d.items.length && (
-                    <div className={cn("h-[3px] w-full rounded-full", d.future ? "bg-transparent" : "bg-line-soft")} />
-                  )}
-                </div>
-                <span className={cn("text-[11px]", d.iso === today ? "font-semibold text-gold" : "text-ink-3")}>
-                  {WEEKDAYS[(d.date.getDay() + 6) % 7]}
-                </span>
+        {/* Balken je Tag, gestapelt nach Sportart. Höhen in px statt %: eine
+            Prozent-Höhe braucht einen Eltern-Container mit fester Höhe, die ein
+            flex-1-Kind nicht hat — deshalb blieben die Balken vorher unsichtbar. */}
+        <div className="flex items-end gap-1.5">
+          {days.map((d) => (
+            <div key={d.iso} className="flex flex-1 flex-col items-center gap-1.5">
+              <div className="flex w-full flex-col justify-end gap-[2px]" style={{ height: CHART_H }}>
+                {d.items.map((a) => (
+                  <button
+                    key={a.activityId}
+                    onClick={() => setActivity(a)}
+                    title={`${a.activityName || typeLabel(a.typeKey)} · ${fmtDur(a.duration, { short: true })}`}
+                    className="w-full rounded-[4px] transition-opacity hover:opacity-80"
+                    style={{
+                      height: Math.max(6, ((a.duration ?? 0) / maxDayDur) * CHART_H),
+                      background: themeToken(SPORT_META[a.group].cssVar),
+                    }}
+                  />
+                ))}
+                {!d.items.length && (
+                  <div className={cn("h-[3px] w-full rounded-full", d.future ? "bg-transparent" : "bg-line-soft")} />
+                )}
               </div>
-            );
-          })}
+              <span className={cn("text-[11px]", d.iso === today ? "font-semibold text-gold" : "text-ink-3")}>
+                {WEEKDAYS[(d.date.getDay() + 6) % 7]}
+              </span>
+            </div>
+          ))}
         </div>
 
         {groupsUsed.length > 0 && (

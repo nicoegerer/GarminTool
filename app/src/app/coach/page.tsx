@@ -6,7 +6,8 @@ import { RefreshCw, Send, Settings2, Sparkles } from "lucide-react";
 import { useData, useGarmin } from "@/lib/data";
 import { usePrefs } from "@/lib/prefs";
 import { getProvider, loadConfig, AiError, type ProviderConfig } from "@/lib/ai";
-import { COACH_SYSTEM, DEFAULT_PARAMS, chatPrompt, coachPrompt, type CoachParams, type Focus, type Intensity, type Venue } from "@/lib/ai/coach";
+import { COACH_SYSTEM, chatPrompt, coachPrompt, type CoachParams, type Focus, type Intensity, type Venue } from "@/lib/ai/coach";
+import { coachSession } from "@/lib/ai/coach-session";
 import { Card, Empty, PageHeader, Skeleton } from "@/components/ui/primitives";
 import { cn } from "@/lib/format";
 
@@ -59,13 +60,21 @@ function Coach() {
   const data = useGarmin();
   const { prefs, ready } = usePrefs();
   const [cfg, setCfg] = useState<ProviderConfig | null>(null);
-  const [params, setParams] = useState<CoachParams>(DEFAULT_PARAMS);
-  const [plan, setPlan] = useState("");
+  // Seed from the module-level store so a proposal survives navigating away and
+  // back; a full reload re-imports the module and starts fresh.
+  const [params, setParams] = useState<CoachParams>(coachSession.params);
+  const [plan, setPlan] = useState(coachSession.plan);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
 
   useEffect(() => setCfg(loadConfig()), []);
+  useEffect(() => {
+    coachSession.params = params;
+  }, [params]);
+  useEffect(() => {
+    coachSession.plan = plan;
+  }, [plan]);
 
   const generate = useCallback(
     async (p: CoachParams) => {
@@ -208,12 +217,17 @@ function Coach() {
 function ChatBox({ cfg }: { cfg: ProviderConfig }) {
   const data = useGarmin();
   const { prefs } = usePrefs();
-  const [msgs, setMsgs] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  // Seeded from and mirrored to the module store: the conversation stays put
+  // across page navigation and clears only on a real reload.
+  const [msgs, setMsgs] = useState<{ role: "user" | "assistant"; content: string }[]>(coachSession.chat);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [msgs]);
+  useEffect(() => {
+    coachSession.chat = msgs;
+  }, [msgs]);
 
   async function send(e: React.FormEvent) {
     e.preventDefault();

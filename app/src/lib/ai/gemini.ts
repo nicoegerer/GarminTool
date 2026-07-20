@@ -28,7 +28,14 @@ export const geminiProvider: AiProvider = {
             role: m.role === "assistant" ? "model" : "user",
             parts: [{ text: m.content }],
           })),
-          generationConfig: { maxOutputTokens: req.maxTokens ?? 2048 },
+          generationConfig: {
+            maxOutputTokens: req.maxTokens ?? 2048,
+            // gemini-flash-latest is a 2.5 model with "thinking" on by default.
+            // Those hidden tokens count against maxOutputTokens, so a long reply
+            // hit the cap and got cut off mid-sentence. We don't show the
+            // thoughts anyway — turn them off so the whole budget is the answer.
+            thinkingConfig: { thinkingBudget: 0 },
+          },
         }),
       },
     );

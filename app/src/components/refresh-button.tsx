@@ -6,42 +6,114 @@ import { cn } from "@/lib/format";
 import { dataUrl } from "@/lib/paths";
 import { useData } from "@/lib/data";
 
-type Phase = "idle" | "checking" | "current";
+type Phase = "idle" | "checking" | "current" | "pulling";
 
 /**
- * "Aktualisieren" — loads the newest published data, on any device, no token.
+ * "Aktualisieren" — works on any device with no per-user setup.
  *
- * The actual pull from the watch runs server-side every 2h (refresh-data.yml)
- * and redeploys the site (deploy.yml on workflow_run). So this button only has
- * to fetch the newest deployed data: it checks the live manifest, and reloads
- * if it's newer than what's on screen. Embedding a GitHub token here to trigger
- * the workflow would mean publishing it in the public bundle — not worth the
- * risk when the automatic refresh already keeps things current.
+ * Two modes, chosen at build time:
+ *
+ * 1. If NEXT_PUBLIC_DISPATCH_TOKEN is compiled in, the button actually triggers
+ *    a fresh pull from the watch: it dispatches the refresh workflow, then polls
+ *    the live manifest until the new data is deployed and reloads. The token is
+ *    a fine-grained PAT scoped to *only* Actions:write on *only* this repo — if
+ *    it leaks, the worst anyone can do is start a refresh run. No code, data or
+ *    account access.
+ *
+ * 2. Without a token it falls back to loading the newest already-published data
+ *    (the workflow runs itself every 2h). Still no key, still any device.
  */
+const DISPATCH_TOKEN = process.env.NEXT_PUBLIC_DISPATCH_TOKEN ?? "";
+const REPO = "nicoegerer/GarminTool";
+const WORKFLOW = "refresh-data.yml";
+const THROTTLE_MS = 3 * 60 * 1000; // don't hammer the watch API
+const POLL_EVERY = 6000;
+const POLL_FOR = 5 * 60 * 1000;
+
 export function RefreshButton({ compact = false }: { compact?: boolean }) {
   const { data } = useData();
   const [phase, setPhase] = useState<Phase>("idle");
   const [label, setLabel] = useState("Aktualisieren");
 
-  async function click() {
-    if (phase === "checking") return;
+  function reset(delay = 2500) {
+    setTimeout(() => {
+      setPhase("idle");
+      setLabel("Aktualisieren");
+    }, delay);
+  }
+
+  async function liveManifest(): Promise<string | undefined> {
+    const res = await fetch(`${dataUrl("manifest.json")}?ts=${Date.now()}`, { cache: "no-store" });
+    const m = (await res.json()) as { generated_at?: string };
+    return m.generated_at;
+  }
+
+  /** Poll the deployed manifest until it moves past `prev`, then reload. */
+  async function waitForNewData(prev: string | undefined) {
+    const deadline = Date.now() + POLL_FOR;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, POLL_EVERY));
+      try {
+        const gen = await liveManifest();
+        if (gen && gen !== prev) {
+          setLabel("Neue Daten – lädt …");
+          setTimeout(() => location.reload(), 400);
+          return;
+        }
+      } catch {
+        /* keep polling */
+      }
+    }
+    // The run can outlast the poll window; the site updates itself once it lands.
+    setPhase("current");
+    setLabel("Läuft – gleich fertig");
+    reset(4000);
+  }
+
+  async function triggerPull() {
+    const last = Number(localStorage.getItem("gt:lastPull") ?? 0);
+    if (Date.now() - last < THROTTLE_MS) {
+      setPhase("current");
+      setLabel("Gerade erst aktualisiert");
+      reset();
+      return;
+    }
+    setPhase("pulling");
+    setLabel("Hole von der Uhr …");
+    const prev = data?.manifest?.generated_at;
+    try {
+      const res = await fetch(`https://api.github.com/repos/${REPO}/actions/workflows/${WORKFLOW}/dispatches`, {
+        method: "POST",
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${DISPATCH_TOKEN}`,
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+        body: JSON.stringify({ ref: "main" }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      localStorage.setItem("gt:lastPull", String(Date.now()));
+      await waitForNewData(prev);
+    } catch {
+      // Fall back to just loading whatever is freshest.
+      await checkLatest();
+    }
+  }
+
+  /** Fallback / no-token path: reload if the deployed data is newer. */
+  async function checkLatest() {
     setPhase("checking");
     setLabel("Prüfe …");
-
     const loaded = data?.manifest?.generated_at;
     try {
-      const res = await fetch(`${dataUrl("manifest.json")}?ts=${Date.now()}`, { cache: "no-store" });
-      const m = (await res.json()) as { generated_at?: string };
-      if (m.generated_at && m.generated_at !== loaded) {
+      const gen = await liveManifest();
+      if (gen && gen !== loaded) {
         setLabel("Neue Daten – lädt …");
-        setTimeout(() => location.reload(), 500);
+        setTimeout(() => location.reload(), 400);
       } else {
         setPhase("current");
         setLabel("Bereits aktuell");
-        setTimeout(() => {
-          setPhase("idle");
-          setLabel("Aktualisieren");
-        }, 2500);
+        reset();
       }
     } catch {
       setPhase("idle");
@@ -49,12 +121,19 @@ export function RefreshButton({ compact = false }: { compact?: boolean }) {
     }
   }
 
+  function click() {
+    if (phase === "checking" || phase === "pulling") return;
+    if (DISPATCH_TOKEN) void triggerPull();
+    else void checkLatest();
+  }
+
+  const spinning = phase === "checking" || phase === "pulling";
   const Icon = phase === "current" ? Check : RefreshCw;
 
   return (
     <button
       onClick={click}
-      disabled={phase === "checking"}
+      disabled={spinning}
       className={cn(
         "inline-flex items-center gap-2 rounded-full border border-line text-ink-2 transition-colors",
         "hover:border-gold/40 hover:bg-gold/8 hover:text-gold disabled:opacity-60",
@@ -63,7 +142,7 @@ export function RefreshButton({ compact = false }: { compact?: boolean }) {
       )}
       aria-label="Daten aktualisieren"
     >
-      <Icon className={cn("size-[15px] shrink-0", phase === "checking" && "animate-spin")} strokeWidth={2} />
+      <Icon className={cn("size-[15px] shrink-0", spinning && "animate-spin")} strokeWidth={2} />
       {!compact && <span>{label}</span>}
     </button>
   );
