@@ -1,13 +1,7 @@
 import { geminiProvider } from "./gemini";
-import type { AiProvider, ProviderConfig, ProviderId } from "./provider";
+import type { AiProvider, ProviderConfig } from "./provider";
 
-/** Registry — adding a model means adding one entry here. */
-export const PROVIDERS: Record<ProviderId, AiProvider> = {
-  gemini: geminiProvider,
-};
-
-export const PROVIDER_LIST: AiProvider[] = [geminiProvider];
-
+/** One provider today; a swap is one entry here plus one adapter file. */
 export function getProvider(_cfg: ProviderConfig): AiProvider {
   return geminiProvider;
 }

@@ -1,8 +1,8 @@
 "use client";
 
 import { ChevronRight } from "lucide-react";
-import { motion, useInView, useSpring, useTransform } from "motion/react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { motion } from "motion/react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/format";
 
 /**
@@ -83,30 +83,53 @@ export function MetricCard({
   );
 }
 
-/** "1.234,5" → 1234.5 — the values arrive already localised. */
+/**
+ * Parses the display string back to a number for the count-up.
+ *
+ * The catch: two formats reach here. `fmtNum` emits German ("1.234,5" — dot is
+ * a thousands separator), while `.toFixed(1)` emits English ("51.8" — dot is
+ * the decimal point). Stripping every dot turned "51.8" into 518. So: only
+ * treat a dot as a thousands separator when a comma is also present (true
+ * German formatting); otherwise the dot is a decimal point.
+ */
 function parseGerman(s: string): number {
-  const n = Number(s.replace(/\./g, "").replace(",", "."));
+  const cleaned = s.includes(",")
+    ? s.replace(/\./g, "").replace(",", ".") // German: 1.234,5 → 1234.5
+    : s; // English decimal (51.8) or plain integer — leave the dot alone
+  const n = Number(cleaned);
   return Number.isFinite(n) ? n : 0;
 }
 
+/**
+ * Counts up to `value` with a plain requestAnimationFrame loop.
+ *
+ * Not motion/react: useInView + useSpring both silently no-op in this stack
+ * (same family of breakage as AnimatePresence/useScroll), which left every
+ * animated stat frozen at 0. A rAF loop has no such dependency — it always
+ * reaches the real value, animation or not.
+ */
 function CountUp({ value, digits, signed }: { value: number; digits: number; signed: boolean }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const inView = useInView(ref, { once: true, margin: "-30px" });
-  const spring = useSpring(0, { stiffness: 60, damping: 17, mass: 0.7 });
-  const text = useTransform(spring, (v) => {
-    const s = v.toLocaleString("de-DE", { minimumFractionDigits: digits, maximumFractionDigits: digits });
-    return signed && v > 0 ? `+${s}` : s;
-  });
+  const [display, setDisplay] = useState(value);
+  const raf = useRef(0);
 
   useEffect(() => {
-    if (inView) spring.set(value);
-  }, [inView, value, spring]);
+    const start = performance.now();
+    const duration = 850;
+    const from = 0;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      // easeOutQuint — quick then settling
+      const eased = 1 - Math.pow(1 - t, 5);
+      setDisplay(from + (value - from) * eased);
+      if (t < 1) raf.current = requestAnimationFrame(tick);
+      else setDisplay(value); // land exactly on the target
+    };
+    raf.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf.current);
+  }, [value]);
 
-  return (
-    <span ref={ref} className="tabular-nums">
-      <motion.span>{text}</motion.span>
-    </span>
-  );
+  const s = display.toLocaleString("de-DE", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return <span className="tabular-nums">{signed && display > 0 ? `+${s}` : s}</span>;
 }
 
 function Sparkline({ values, color }: { values: (number | null)[]; color: string }) {

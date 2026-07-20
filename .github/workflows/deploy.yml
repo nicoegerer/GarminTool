@@ -7,6 +7,13 @@ name: Seite bauen & veröffentlichen
 on:
   push:
     branches: [main]
+  # Ein Daten-Commit des Refresh-Workflows löst per push KEIN Deploy aus:
+  # GitHub unterbindet, dass ein mit GITHUB_TOKEN erzeugter Push weitere
+  # Workflows startet (Schutz vor Endlosschleifen). workflow_run überbrückt
+  # das — so wird die Seite nach jedem Refresh automatisch neu gebaut.
+  workflow_run:
+    workflows: ["Garmin-Daten aktualisieren"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -38,9 +45,13 @@ jobs:
 
       - name: Bauen
         working-directory: app
-        # Projekt-Page liegt unter /GarminTool/, nicht im Wurzelverzeichnis.
         env:
+          # Projekt-Page liegt unter /GarminTool/, nicht im Wurzelverzeichnis.
           NEXT_PUBLIC_BASE_PATH: /GarminTool
+          # Gemini-Key wird ins Bundle gebacken, damit der Coach ohne Setup
+          # läuft. Auf einer öffentlichen Seite ist er damit im JS sichtbar —
+          # bewusst so gewählt (begrenztes Risiko: nur Google-Kontingent).
+          NEXT_PUBLIC_GEMINI_KEY: ${{ secrets.NEXT_PUBLIC_GEMINI_KEY }}
         run: npm run build
 
       - name: Jekyll abschalten

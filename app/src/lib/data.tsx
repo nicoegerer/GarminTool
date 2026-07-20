@@ -17,9 +17,17 @@ import { clean, daysBetween, isoDate, parseDate, weekStart } from "./format";
 import { sportGroup } from "./sports";
 import { dataUrl } from "./paths";
 
+/** Sorts an array in place, ascending by an ISO-date field. No-op if absent. */
+function sortByDate<K extends string>(arr: Array<Record<K, string>> | undefined, key: K): void {
+  arr?.sort((a, b) => (a[key] ?? "").localeCompare(b[key] ?? ""));
+}
+
 async function loadJSON<T>(name: string, fallback: T): Promise<T> {
   try {
-    const res = await fetch(dataUrl(`${name}.json`), { cache: "force-cache" });
+    // "no-cache" = always revalidate against the server (cheap 304 when
+    // unchanged). These files change every refresh, so a reload after a deploy
+    // must pick up the new version — force-cache would serve stale data.
+    const res = await fetch(dataUrl(`${name}.json`), { cache: "no-cache" });
     if (!res.ok) return fallback;
     return (await res.json()) as T;
   } catch {
@@ -72,6 +80,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ]);
 
         if (cancelled) return;
+
+        // Normalise every daily series to chronological (oldest → newest).
+        // The exporter builds sleep_scores backwards, so `.at(-1)` was picking
+        // the OLDEST night instead of the newest. Rather than trust the export
+        // order anywhere, sort here once — everything downstream relies on it.
+        sortByDate(daily.sleep_scores, "date");
+        sortByDate(daily.body_battery, "date");
+        sortByDate(daily.vo2max, "date");
+        sortByDate(daily.rhr, "calendarDate");
+        sortByDate(daily.stress, "calendarDate");
+        sortByDate(daily.steps, "calendarDate");
+        sortByDate(daily.intensity_minutes_weekly, "calendarDate");
 
         const activities: Activity[] = rawActs
           .map((a) => ({

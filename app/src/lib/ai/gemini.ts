@@ -10,19 +10,8 @@ const BASE = "https://generativelanguage.googleapis.com/v1beta";
 export const geminiProvider: AiProvider = {
   id: "gemini",
   label: "Google Gemini",
-  privacyNote: "Deine Trainingsdaten werden an Google gesendet.",
 
   isConfigured: (cfg) => cfg.geminiKey.trim().length > 0,
-
-  async listModels(cfg: ProviderConfig) {
-    const res = await fetch(`${BASE}/models`, { headers: { "x-goog-api-key": cfg.geminiKey } });
-    if (!res.ok) throw toError(res.status, await safeText(res));
-    const body = (await res.json()) as { models?: { name: string; supportedGenerationMethods?: string[] }[] };
-    return (body.models ?? [])
-      .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
-      .map((m) => m.name.replace(/^models\//, ""))
-      .sort();
-  },
 
   async *stream(req: ChatRequest, cfg: ProviderConfig) {
     if (!cfg.geminiKey.trim()) throw new AiError("Kein Gemini-API-Key hinterlegt.", "config");

@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 import { RefreshCw, Send, Settings2, Sparkles } from "lucide-react";
 import { useData, useGarmin } from "@/lib/data";
 import { usePrefs } from "@/lib/prefs";
@@ -176,30 +175,28 @@ function Coach() {
         </div>
       </Card>
 
-      <AnimatePresence mode="wait">
-        {err === "no-config" ? null : err ? (
-          <motion.div key="err" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <Card className="border-negative/30 p-5">
-              <p className="text-sm text-negative">{err}</p>
-            </Card>
-          </motion.div>
-        ) : plan ? (
-          <motion.div key="plan" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-            <Card className="p-6 lg:p-7">
-              <Prose text={plan} />
-              {busy && <span className="ml-0.5 inline-block h-4 w-[3px] animate-pulse bg-gold align-middle" />}
-            </Card>
-          </motion.div>
-        ) : busy ? (
-          <Card className="space-y-3 p-6">
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-5/6" />
+      {/* Kein AnimatePresence: es unmountet in diesem Stack nicht zuverlässig,
+          Zustände würden sich stapeln. Enter-Animation reicht. */}
+      {err === "no-config" ? null : err ? (
+        <Card className="border-negative/30 p-5">
+          <p className="text-sm text-negative">{err}</p>
+        </Card>
+      ) : plan ? (
+        <motion.div key="plan" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+          <Card className="p-6 lg:p-7">
+            <Prose text={plan} />
+            {busy && <span className="ml-0.5 inline-block h-4 w-[3px] animate-pulse bg-gold align-middle" />}
           </Card>
-        ) : (
-          <Empty>Wähle deine Vorgaben und hol dir einen Vorschlag.</Empty>
-        )}
-      </AnimatePresence>
+        </motion.div>
+      ) : busy ? (
+        <Card className="space-y-3 p-6">
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-5/6" />
+        </Card>
+      ) : (
+        <Empty>Wähle deine Vorgaben und hol dir einen Vorschlag.</Empty>
+      )}
 
       <ChatBox cfg={cfg} />
     </>
@@ -335,20 +332,15 @@ function Prose({ text, small = false }: { text: string; small?: boolean }) {
 }
 
 function NotConfigured({ providerLabel }: { providerLabel: string }) {
+  // Only shown if the build-time key is missing (e.g. a local dev build).
   return (
     <Card className="mb-5 border-gold/25 bg-gold/5 p-5">
       <div className="flex items-start gap-3">
         <Settings2 className="mt-0.5 size-5 shrink-0 text-gold" strokeWidth={1.9} />
-        <div className="text-sm">
-          <p className="font-medium text-ink">{providerLabel} ist noch nicht eingerichtet.</p>
-          <p className="mt-1 text-ink-2">
-            Hinterlege einmalig deinen Zugang in den{" "}
-            <Link href="/einstellungen" className="text-gold underline-offset-2 hover:underline">
-              Einstellungen
-            </Link>
-            . Er bleibt in diesem Browser.
-          </p>
-        </div>
+        <p className="text-sm text-ink-2">
+          {providerLabel} ist in diesem Build nicht konfiguriert. Auf der veröffentlichten Seite läuft der Coach ohne
+          weiteres Zutun.
+        </p>
       </div>
     </Card>
   );

@@ -1,9 +1,12 @@
 /**
  * Provider-agnostic chat interface.
  *
- * There is exactly one provider today (Gemini — the only free option that
- * works on both phone and desktop). The interface stays so a swap is one
- * adapter file plus one registry entry, with no call sites touched.
+ * One provider today (Gemini — the only free option that runs on phone and
+ * desktop alike). The interface stays so a swap is one adapter file plus one
+ * registry entry, with no call sites touched.
+ *
+ * The API key is baked in at build time (NEXT_PUBLIC_GEMINI_KEY) so the coach
+ * works everywhere without any per-device setup.
  */
 
 export type ProviderId = "gemini";
@@ -24,14 +27,9 @@ export interface ChatRequest {
 export interface AiProvider {
   readonly id: ProviderId;
   readonly label: string;
-  /** Where the user's data goes — surfaced in the settings UI. */
-  readonly privacyNote: string;
-  /** Whether the adapter has what it needs. */
   isConfigured(cfg: ProviderConfig): boolean;
   /** Streams the reply in chunks. Throws `AiError` on failure. */
   stream(req: ChatRequest, cfg: ProviderConfig): AsyncGenerator<string, void, unknown>;
-  /** Lists selectable models, if the provider can be asked. */
-  listModels?(cfg: ProviderConfig): Promise<string[]>;
 }
 
 export interface ProviderConfig {
@@ -40,10 +38,15 @@ export interface ProviderConfig {
   geminiModel: string;
 }
 
+/**
+ * gemini-flash-latest is the free-tier alias that actually carries quota on
+ * the current AI-Studio key format — the pinned gemini-2.0-flash returns a
+ * zero-quota 429 there.
+ */
 export const DEFAULT_CONFIG: ProviderConfig = {
   provider: "gemini",
-  geminiKey: "",
-  geminiModel: "gemini-2.0-flash",
+  geminiKey: process.env.NEXT_PUBLIC_GEMINI_KEY ?? "",
+  geminiModel: "gemini-flash-latest",
 };
 
 export class AiError extends Error {
@@ -56,18 +59,7 @@ export class AiError extends Error {
   }
 }
 
-const STORAGE_KEY = "gt_ai_config";
-
+/** No per-device config anymore — the key is compiled in. */
 export function loadConfig(): ProviderConfig {
-  if (typeof window === "undefined") return DEFAULT_CONFIG;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? { ...DEFAULT_CONFIG, ...(JSON.parse(raw) as Partial<ProviderConfig>) } : DEFAULT_CONFIG;
-  } catch {
-    return DEFAULT_CONFIG;
-  }
-}
-
-export function saveConfig(cfg: ProviderConfig): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+  return DEFAULT_CONFIG;
 }
