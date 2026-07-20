@@ -94,7 +94,7 @@ function Coach() {
           {
             system: COACH_SYSTEM,
             messages: [{ role: "user", content: coachPrompt(p, data, prefs) }],
-            maxTokens: 2048,
+            maxTokens: 700,
             signal: abort.current.signal,
           },
           cfg,
