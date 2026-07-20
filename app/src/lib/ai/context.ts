@@ -122,11 +122,35 @@ export function buildContext(data: GarminData, prefs: UserPrefs): string {
       .join("\n")}`,
   );
 
-  /* --- Prognosen & Rekorde --- */
+  /* --- Persönliche Bestzeiten (echte Rekorde, nicht Prognosen) --- */
+  const prs = records?.personal_records ?? [];
+  const PR_LABEL: Record<number, { label: string; fmt: (v: number) => string }> = {
+    1: { label: "Schnellster 1 km", fmt: fmtTime },
+    2: { label: "Schnellste Meile", fmt: fmtTime },
+    3: { label: "Schnellste 5 km", fmt: fmtTime },
+    4: { label: "Schnellste 10 km", fmt: fmtTime },
+    5: { label: "Schnellster Halbmarathon", fmt: fmtTime },
+    6: { label: "Schnellster Marathon", fmt: fmtTime },
+    7: { label: "Längster Lauf", fmt: (v) => fmtKm(v) },
+    8: { label: "Längste Radtour", fmt: (v) => fmtKm(v) },
+    11: { label: "Schnellste 40 km Rad", fmt: fmtTime },
+    17: { label: "Längste Schwimmstrecke", fmt: (v) => `${Math.round(v)} m` },
+    18: { label: "Schnellste 100 m Schwimmen", fmt: fmtTime },
+    22: { label: "Schnellste 1000 m Schwimmen", fmt: fmtTime },
+    23: { label: "Schnellste 1500 m Schwimmen", fmt: fmtTime },
+  };
+  const prLines = prs
+    .filter((p) => PR_LABEL[p.type_id] && p.value > 0)
+    .map((p) => `${PR_LABEL[p.type_id].label}: ${PR_LABEL[p.type_id].fmt(p.value)}${p.date ? ` (${String(p.date).slice(0, 10)})` : ""}`);
+  if (prLines.length) {
+    out.push(`PERSÖNLICHE BESTZEITEN (echte Rekorde, gelaufen/geschwommen — NICHT Prognosen):\n${prLines.join("\n")}`);
+  }
+
+  /* --- Prognosen --- */
   const rp = fitness.race_predictions;
   if (rp) {
     out.push(
-      `RACE-PROGNOSEN (Garmin): 5 km ${fmtTime(rp.time5K)}, 10 km ${fmtTime(rp.time10K)}, ` +
+      `RACE-PROGNOSEN (Garmins Schätzung fürs aktuelle Formniveau, keine echten Zeiten): 5 km ${fmtTime(rp.time5K)}, 10 km ${fmtTime(rp.time10K)}, ` +
         `HM ${fmtTime(rp.timeHalfMarathon)}, Marathon ${fmtTime(rp.timeMarathon)}.`,
     );
   }

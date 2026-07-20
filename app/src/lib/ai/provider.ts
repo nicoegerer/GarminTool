@@ -39,15 +39,21 @@ export interface ProviderConfig {
 }
 
 /**
- * gemini-flash-latest is the free-tier alias that actually carries quota on
- * the current AI-Studio key format — the pinned gemini-2.0-flash returns a
- * zero-quota 429 there.
+ * Only the "-latest" aliases carry free-tier quota on this AI-Studio key format
+ * (pinned gemini-2.0-* return a zero-quota 429). Among those, the plain
+ * flash-latest currently resolves to gemini-3.5-flash with a brutal 20
+ * requests/day free cap — a handful of chat turns and it's exhausted. The
+ * lite alias has a much higher daily allowance, so it's the primary; the
+ * adapter falls back through the rest on a 429.
  */
 export const DEFAULT_CONFIG: ProviderConfig = {
   provider: "gemini",
   geminiKey: process.env.NEXT_PUBLIC_GEMINI_KEY ?? "",
-  geminiModel: "gemini-flash-latest",
+  geminiModel: "gemini-flash-lite-latest",
 };
+
+/** Tried in order; a rate-limited model hands off to the next. */
+export const GEMINI_FALLBACKS = ["gemini-flash-lite-latest", "gemini-flash-latest"];
 
 export class AiError extends Error {
   constructor(

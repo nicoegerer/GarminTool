@@ -1,6 +1,11 @@
-import { AiError, type AiProvider, type ChatRequest, type ProviderConfig } from "./provider";
+import { AiError, GEMINI_FALLBACKS, type AiProvider, type ChatRequest, type ProviderConfig } from "./provider";
 
 const BASE = "https://generativelanguage.googleapis.com/v1beta";
+
+/** Primary model first, then the shared fallback chain (deduped). */
+function modelChain(primary: string): string[] {
+  return [primary, ...GEMINI_FALLBACKS.filter((m) => m !== primary)];
+}
 
 /**
  * Google Gemini via the free tier.
@@ -16,31 +21,39 @@ export const geminiProvider: AiProvider = {
   async *stream(req: ChatRequest, cfg: ProviderConfig) {
     if (!cfg.geminiKey.trim()) throw new AiError("Kein Gemini-API-Key hinterlegt.", "config");
 
-    const res = await fetch(
-      `${BASE}/models/${encodeURIComponent(cfg.geminiModel)}:streamGenerateContent?alt=sse`,
-      {
+    const body = JSON.stringify({
+      systemInstruction: { parts: [{ text: req.system }] },
+      contents: req.messages.map((m) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }],
+      })),
+      generationConfig: {
+        maxOutputTokens: req.maxTokens ?? 2048,
+        // The flash-latest aliases are 2.5+ models with "thinking" on by
+        // default. Those hidden tokens count against maxOutputTokens, so a long
+        // reply hit the cap and got cut off mid-sentence. We don't show the
+        // thoughts anyway — turn them off so the whole budget is the answer.
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    });
+
+    // Try each model in turn: if one's free daily quota is spent (429), fall
+    // through to the next instead of dead-ending the chat.
+    const models = modelChain(cfg.geminiModel);
+    let res: Response | null = null;
+    for (let i = 0; i < models.length; i++) {
+      res = await fetch(`${BASE}/models/${encodeURIComponent(models[i])}:streamGenerateContent?alt=sse`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-goog-api-key": cfg.geminiKey },
         signal: req.signal,
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: req.system }] },
-          contents: req.messages.map((m) => ({
-            role: m.role === "assistant" ? "model" : "user",
-            parts: [{ text: m.content }],
-          })),
-          generationConfig: {
-            maxOutputTokens: req.maxTokens ?? 2048,
-            // gemini-flash-latest is a 2.5 model with "thinking" on by default.
-            // Those hidden tokens count against maxOutputTokens, so a long reply
-            // hit the cap and got cut off mid-sentence. We don't show the
-            // thoughts anyway — turn them off so the whole budget is the answer.
-            thinkingConfig: { thinkingBudget: 0 },
-          },
-        }),
-      },
-    );
-
-    if (!res.ok) throw toError(res.status, await safeText(res));
+        body,
+      });
+      if (res.ok) break;
+      // On a rate limit with models left, try the next one; otherwise report.
+      if (res.status === 429 && i < models.length - 1) continue;
+      throw toError(res.status, await safeText(res));
+    }
+    if (!res || !res.ok) throw new AiError("Gemini ist gerade nicht erreichbar.", "network");
     if (!res.body) throw new AiError("Gemini lieferte keinen Stream.", "network");
 
     const reader = res.body.getReader();
@@ -78,7 +91,7 @@ export const geminiProvider: AiProvider = {
 function toError(status: number, body: string): AiError {
   if (status === 400 && /API key not valid/i.test(body)) return new AiError("Gemini-API-Key ist ungültig.", "auth");
   if (status === 401 || status === 403) return new AiError("Gemini-API-Key wurde abgelehnt.", "auth");
-  if (status === 429) return new AiError("Gemini-Kontingent erschöpft. Später erneut versuchen.", "rate_limit");
+  if (status === 429) return new AiError("Das kostenlose Tageslimit von Gemini ist erreicht. Morgen geht's wieder.", "rate_limit");
   return new AiError(`Gemini antwortete mit ${status}.`, status >= 500 ? "network" : "unknown");
 }
 
