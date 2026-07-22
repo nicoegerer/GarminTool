@@ -26,7 +26,6 @@ type Phase = "idle" | "checking" | "current" | "pulling";
 const DISPATCH_TOKEN = process.env.NEXT_PUBLIC_DISPATCH_TOKEN ?? "";
 const REPO = "nicoegerer/GarminTool";
 const WORKFLOW = "refresh-data.yml";
-const THROTTLE_MS = 3 * 60 * 1000; // don't hammer the watch API
 const POLL_EVERY = 6000;
 const POLL_FOR = 5 * 60 * 1000;
 
@@ -64,20 +63,14 @@ export function RefreshButton({ compact = false }: { compact?: boolean }) {
         /* keep polling */
       }
     }
-    // The run can outlast the poll window; the site updates itself once it lands.
+    // The run can outlast the poll window. It keeps going server-side either
+    // way, so say so instead of implying it failed.
     setPhase("current");
-    setLabel("Läuft – gleich fertig");
-    reset(4000);
+    setLabel("Läuft weiter im Hintergrund");
+    reset(5000);
   }
 
   async function triggerPull() {
-    const last = Number(localStorage.getItem("gt:lastPull") ?? 0);
-    if (Date.now() - last < THROTTLE_MS) {
-      setPhase("current");
-      setLabel("Gerade erst aktualisiert");
-      reset();
-      return;
-    }
     setPhase("pulling");
     setLabel("Hole von der Uhr …");
     const prev = data?.manifest?.generated_at;
@@ -90,9 +83,13 @@ export function RefreshButton({ compact = false }: { compact?: boolean }) {
           "X-GitHub-Api-Version": "2022-11-28",
         },
         body: JSON.stringify({ ref: "main" }),
+        // Let the request finish even if the page is closed right after the
+        // tap — the pull itself then runs server-side to completion.
+        keepalive: true,
       });
       if (!res.ok) throw new Error(String(res.status));
-      localStorage.setItem("gt:lastPull", String(Date.now()));
+      // Deliberately no throttle: after deleting or fixing something in Garmin
+      // you want to pull again immediately, not wait out a cooldown.
       await waitForNewData(prev);
     } catch {
       // Fall back to just loading whatever is freshest.
