@@ -108,8 +108,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
             date: (a.startTimeLocal ?? "").slice(0, 10),
             group: a.typeKey === "multi_sport" ? ("other" as const) : sportGroup(a.typeKey),
           }))
-          // Drop accidental sub-2-minute recordings; they distort every average.
-          .filter((a) => a.date && (a.duration ?? 0) >= 120)
+          // No duration filter: the app mirrors Garmin Connect exactly. A
+          // sub-2-minute cutoff used to hide accidental recordings, but it also
+          // hid precisely the junk entries you delete by hand — so the visible
+          // count never moved after a cleanup and stopped matching Garmin.
+          .filter((a) => a.date)
           .sort((a, b) => (b.startTimeLocal ?? "").localeCompare(a.startTimeLocal ?? ""));
 
         setState({
