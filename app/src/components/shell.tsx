@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Menu, Monitor, Moon, Sun, X } from "lucide-react";
 import { NAV, PRIMARY_NAV } from "@/lib/nav";
 import { cn } from "@/lib/format";
+import { useMountTransition } from "@/lib/use-mount-transition";
 import { useTheme } from "./theme";
 import { RefreshButton } from "./refresh-button";
 import { Background } from "./background";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -102,6 +103,98 @@ function BottomNav() {
   );
 }
 
+/* ---------- Mobile burger menu ---------- */
+
+const MENU_EXIT_MS = 260;
+
+/**
+ * The full navigation on mobile. The bottom bar only has room for four
+ * destinations, so everything else (Aktivitäten, Statistiken, Wettkämpfe,
+ * Rekorde) is only reachable from here.
+ */
+function MobileMenu() {
+  const pathname = usePathname();
+  const [open, setOpen] = useState(false);
+  const mounted = useMountTransition(open, MENU_EXIT_MS);
+
+  // A tap on a link changes the route — close so the drawer never lingers.
+  useEffect(() => setOpen(false), [pathname]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="grid size-9 place-items-center rounded-lg text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink"
+        aria-label="Menü öffnen"
+        aria-expanded={open}
+      >
+        <Menu className="size-[19px]" strokeWidth={1.9} />
+      </button>
+
+      {mounted && (
+        <div className="fixed inset-0 z-[95] lg:hidden" style={{ pointerEvents: open ? "auto" : "none" }}>
+          <motion.div
+            className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: open ? 1 : 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => setOpen(false)}
+          />
+          <motion.nav
+            className="absolute inset-y-0 right-0 flex w-72 max-w-[85vw] flex-col border-l border-line-soft bg-surface px-4 py-5"
+            initial={{ x: "100%" }}
+            animate={{ x: open ? 0 : "100%" }}
+            transition={{ type: "spring", stiffness: 420, damping: 40 }}
+            style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <span className="text-[15px] font-semibold tracking-tight">Navigation</span>
+              <button
+                onClick={() => setOpen(false)}
+                className="grid size-9 place-items-center rounded-lg text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink"
+                aria-label="Menü schließen"
+              >
+                <X className="size-[18px]" strokeWidth={1.9} />
+              </button>
+            </div>
+
+            <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto">
+              {NAV.map((item) => {
+                const active = isActive(pathname, item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setOpen(false)}
+                    className={cn(
+                      "flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm transition-colors",
+                      active ? "bg-surface-2 text-ink" : "text-ink-2 hover:text-ink",
+                    )}
+                  >
+                    <item.icon className={cn("size-[18px] shrink-0", active && "text-gold")} strokeWidth={active ? 2.2 : 1.8} />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 border-t border-line-soft pt-4">
+              <ThemeToggle />
+            </div>
+          </motion.nav>
+        </div>
+      )}
+    </>
+  );
+}
+
 /* ---------- Mobile sticky header ---------- */
 
 function MobileHeader() {
@@ -112,7 +205,7 @@ function MobileHeader() {
       <span className="text-base font-semibold tracking-tight">{current?.label ?? "GarminTool"}</span>
       <div className="flex items-center gap-1">
         <RefreshButton compact />
-        <ThemeToggle compact />
+        <MobileMenu />
       </div>
     </header>
   );

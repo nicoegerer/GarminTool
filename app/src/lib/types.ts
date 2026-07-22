@@ -16,6 +16,8 @@ export interface ActivityIndex {
   averageHR?: number;
   maxHR?: number;
   averageSpeed?: number;
+  /** Garmin's own moving-average speed. averageSpeed is the elapsed figure. */
+  averageMovingSpeed?: number;
   maxSpeed?: number;
   elevationGain?: number;
   elevationLoss?: number;

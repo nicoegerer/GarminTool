@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { useData, useGarmin } from "@/lib/data";
 import { Empty, PageHeader, Skeleton } from "@/components/ui/primitives";
@@ -25,6 +25,15 @@ function Activities() {
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(PAGE);
   const [activity, setActivity] = useState<Activity | null>(null);
+
+  // Deep link from the stats charts: /aktivitaeten/?a=<id> opens that activity
+  // straight away, so tapping a point in a chart lands on its full detail.
+  useEffect(() => {
+    const id = Number(new URLSearchParams(window.location.search).get("a"));
+    if (!id) return;
+    const match = activities.find((a) => a.activityId === id);
+    if (match) setActivity(match);
+  }, [activities]);
 
   const groups = useMemo(() => SPORT_ORDER.filter((g) => activities.some((a) => a.group === g)), [activities]);
 

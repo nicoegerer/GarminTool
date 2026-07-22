@@ -40,6 +40,7 @@ export function LineChart({
   yMax,
   zoomable = true,
   points = false,
+  onPointClick,
 }: {
   labels: string[];
   series: Series[];
@@ -51,6 +52,8 @@ export function LineChart({
   yMax?: number;
   zoomable?: boolean;
   points?: boolean;
+  /** Called with the data index when a point is tapped. */
+  onPointClick?: (index: number) => void;
 }) {
   const ref = useRef<ChartJS<"line">>(null);
   const [zoomed, setZoomed] = useState(false);
@@ -105,6 +108,13 @@ export function LineChart({
       animation: { duration: 700, easing: "easeOutQuart" },
       interaction: { mode: "index", intersect: false },
       layout: { padding: { top: 6, right: 4 } },
+      onHover: (e, els) => {
+        const el = e.native?.target as HTMLElement | undefined;
+        if (el) el.style.cursor = onPointClick && els.length ? "pointer" : "default";
+      },
+      onClick: (_e, els) => {
+        if (onPointClick && els.length) onPointClick(els[0].index);
+      },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -173,7 +183,7 @@ export function LineChart({
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [yFormat, tooltipFormat, reverseY, yMin, yMax, zoomable, themeKey],
+    [yFormat, tooltipFormat, reverseY, yMin, yMax, zoomable, themeKey, onPointClick],
   );
 
   return (

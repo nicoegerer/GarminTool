@@ -124,7 +124,7 @@ def export_profile(client: Garmin) -> dict:
 
 ACTIVITY_FIELDS = [
     "activityId", "activityName", "startTimeLocal", "duration", "movingDuration", "distance",
-    "elevationGain", "elevationLoss", "averageSpeed", "maxSpeed", "calories", "bmrCalories",
+    "elevationGain", "elevationLoss", "averageSpeed", "averageMovingSpeed", "maxSpeed", "calories", "bmrCalories",
     "averageHR", "maxHR", "steps", "avgStrideLength", "averageRunningCadenceInStepsPerMinute",
     "aerobicTrainingEffect", "anaerobicTrainingEffect", "trainingEffectLabel", "activityTrainingLoad",
     "vO2MaxValue", "avgPower", "maxPower", "normPower", "trainingStressScore", "intensityFactor",

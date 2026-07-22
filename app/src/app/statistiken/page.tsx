@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { inRange, useData, useGarmin, useVo2max, useWeekly } from "@/lib/data";
 import { Card, Empty, PageHeader, Skeleton } from "@/components/ui/primitives";
 import { LineChart } from "@/components/charts";
@@ -40,6 +41,8 @@ function Stats() {
   const weekly = useWeekly();
   const vo2 = useVo2max();
   const [days, setDays] = useState(180);
+
+  const router = useRouter();
 
   /* Alle Serien hängen an EINEM Zeitfenster — deshalb kann keine mehr desynchronisieren. */
   const load = useMemo(() => inRange(loadTrend, today, days), [loadTrend, today, days]);
@@ -163,24 +166,10 @@ function Stats() {
           )}
         </ChartCard>
 
-        <ChartCard title="Lauf-Pace" hint="Ø je Lauf über 2 km · höher = schneller">
-          {runs.length >= 3 ? (
-            <LineChart
-              labels={runs.map((a) => fmtDateShort(a.date))}
-              series={[
-                { label: "Trend", data: rollingMean(runs.map((a) => paceFromSpeed(a.averageSpeed)), 5), color: themeToken("--sport-run") },
-              ]}
-              yFormat={(v) => fmtPace(v)}
-              tooltipFormat={(v, _l, i) => `${fmtPace(v)} · ${runs[i]?.activityName ?? ""}`}
-              reverseY
-            />
-          ) : (
-            <Empty>Zu wenige Läufe im Zeitraum.</Empty>
-          )}
-        </ChartCard>
-
+        {/* Ersetzt das frühere "Lauf-Pace"-Chart: das warf alle Distanzen in eine
+            Linie, wodurch ein langer Lauf wie ein Formverlust aussah. */}
         <ChartCard title="Werde ich schneller?" hint="Ø-Pace je Distanzklasse · höher = schneller">
-          <PaceProgress activities={acts} />
+          <PaceProgress activities={acts} onSelect={(a) => router.push(`/aktivitaeten/?a=${a.activityId}`)} />
         </ChartCard>
 
         <ChartCard title="Rad-Tempo" hint="Ø je Fahrt über 10 km">

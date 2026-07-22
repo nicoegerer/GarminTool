@@ -41,10 +41,18 @@ const detailCache = new Map<number, Promise<ActivityDetail | null>>();
 export function loadActivityDetail(id: number): Promise<ActivityDetail | null> {
   let p = detailCache.get(id);
   if (!p) {
-    p = fetch(dataUrl(`activity/${id}.json`), { cache: "force-cache" })
+    // "no-cache" (revalidate), not "force-cache": a detail file only appears
+    // once the exporter has run for that activity. With force-cache the 404
+    // from opening a brand-new activity too early was cached for good, so the
+    // detail view stayed empty even after the file was published.
+    p = fetch(dataUrl(`activity/${id}.json`), { cache: "no-cache" })
       .then((r) => (r.ok ? (r.json() as Promise<ActivityDetail>) : null))
       .catch(() => null);
     detailCache.set(id, p);
+    // Don't memoise a miss — the file may land with the next refresh.
+    void p.then((d) => {
+      if (!d) detailCache.delete(id);
+    });
   }
   return p;
 }

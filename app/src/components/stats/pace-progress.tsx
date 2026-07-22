@@ -8,61 +8,73 @@ import { fmtDateShort, fmtPace } from "@/lib/format";
 import type { Activity } from "@/lib/types";
 
 /**
- * "Werde ich schneller?" — average pace per distance class over time.
+ * "Werde ich schneller?" — pace per distance class over time.
  *
- * Runs are bucketed by distance so a 5 km effort is never compared against a
- * half marathon; each class gets its own line. The Y axis is reversed, so a
- * line going UP means getting faster — which is what the eye expects from a
- * progress chart.
+ * Classes are cumulative: a run counts for every class whose distance it
+ * reaches or exceeds, so a 12 km run shows up under "ab 5 km" and "ab 10 km".
+ * The Y axis is reversed, so a rising line means getting faster.
  */
-const BUCKETS = [
-  { key: "5k", label: "5 km", min: 4300, max: 6000, cssVar: "--sport-run" },
-  { key: "10k", label: "10 km", min: 8500, max: 11500, cssVar: "--gold" },
-  { key: "15k", label: "15 km", min: 13500, max: 17000, cssVar: "--sport-ride" },
-  { key: "hm", label: "Halbmarathon", min: 17500, max: 23000, cssVar: "--sport-swim" },
+const CLASSES = [
+  { key: "5k", label: "ab 5 km", min: 5000, cssVar: "--sport-run" },
+  { key: "10k", label: "ab 10 km", min: 10000, cssVar: "--gold" },
+  { key: "15k", label: "ab 15 km", min: 15000, cssVar: "--sport-ride" },
+  { key: "marathon", label: "ab Marathon", min: 42195, cssVar: "--sport-swim" },
 ];
 
 interface Entry {
+  activity: Activity;
   date: string;
-  bucket: string;
   pace: number;
+  /** True when Garmin gave no moving speed and the pace had to be derived. */
+  derived: boolean;
 }
 
-export function PaceProgress({ activities }: { activities: Activity[] }) {
+/**
+ * Garmin's own moving-average speed is the source of truth. `averageSpeed` is
+ * the elapsed-time figure — it reads an 18 km run as 8:54/km instead of the
+ * 6:03/km actually run — so it is only a fallback, and deriving from
+ * duration/distance is the last resort and gets flagged in the UI.
+ */
+function paceOf(a: Activity): { pace: number; derived: boolean } | null {
+  if (a.averageMovingSpeed) return { pace: 1000 / a.averageMovingSpeed, derived: false };
+  if (a.movingDuration && a.distance) return { pace: a.movingDuration / (a.distance / 1000), derived: true };
+  if (a.averageSpeed) return { pace: 1000 / a.averageSpeed, derived: true };
+  return null;
+}
+
+export function PaceProgress({
+  activities,
+  onSelect,
+}: {
+  activities: Activity[];
+  onSelect?: (a: Activity) => void;
+}) {
   const entries = useMemo<Entry[]>(() => {
     const rows: Entry[] = [];
     for (const a of activities) {
-      if (a.group !== "run" || !a.distance) continue;
-      const b = BUCKETS.find((x) => a.distance! >= x.min && a.distance! <= x.max);
-      if (!b) continue;
-      // Moving time, not elapsed: breaks and traffic lights made an 18 km run
-      // read as 8:54/km instead of the 6:03/km actually run. Garmin's own
-      // averageSpeed is no help here — it is the elapsed-time figure too.
-      const secs = a.movingDuration || a.duration;
-      const pace = secs ? secs / (a.distance / 1000) : null;
-      if (!pace || !isFinite(pace)) continue;
-      rows.push({ date: a.date, bucket: b.key, pace });
+      if (a.group !== "run" || !a.distance || a.distance < CLASSES[0].min) continue;
+      const p = paceOf(a);
+      if (!p || !isFinite(p.pace)) continue;
+      rows.push({ activity: a, date: a.date, pace: p.pace, derived: p.derived });
     }
     return rows.sort((x, y) => x.date.localeCompare(y.date));
   }, [activities]);
 
-  const used = BUCKETS.filter((b) => entries.some((e) => e.bucket === b.key));
+  const used = CLASSES.filter((c) => entries.some((e) => (e.activity.distance ?? 0) >= c.min));
 
   const series = useMemo<Series[]>(
     () =>
-      used.map((b) => ({
-        label: b.label,
-        color: themeToken(b.cssVar),
-        // One x-slot per run; a class only fills its own slots and the chart
-        // spans the gaps, so the lines stay readable side by side.
-        data: entries.map((e) => (e.bucket === b.key ? e.pace : null)),
+      used.map((c) => ({
+        label: c.label,
+        color: themeToken(c.cssVar),
+        data: entries.map((e) => ((e.activity.distance ?? 0) >= c.min ? e.pace : null)),
       })),
     [entries, used],
   );
 
-  if (!entries.length) {
-    return <Empty>Noch keine Läufe auf 5 km, 10 km oder Halbmarathon-Distanz.</Empty>;
-  }
+  if (!entries.length) return <Empty>Noch keine Läufe ab 5 km.</Empty>;
+
+  const anyDerived = entries.some((e) => e.derived);
 
   return (
     <>
@@ -73,24 +85,25 @@ export function PaceProgress({ activities }: { activities: Activity[] }) {
         points
         reverseY
         yFormat={(v) => fmtPace(v)}
-        tooltipFormat={(v, label) => `${label}: ${fmtPace(v)}`}
+        tooltipFormat={(v, label, i) =>
+          `${label}: ${fmtPace(v)} · ${entries[i]?.activity.activityName ?? ""}${entries[i]?.derived ? " (berechnet)" : ""}`
+        }
+        onPointClick={onSelect ? (i) => entries[i] && onSelect(entries[i].activity) : undefined}
       />
 
       <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-line-soft pt-4">
-        {used.map((b) => {
-          const own = entries.filter((e) => e.bucket === b.key);
+        {used.map((c) => {
+          const own = entries.filter((e) => (e.activity.distance ?? 0) >= c.min);
           const first = own[0];
           const last = own[own.length - 1];
-          // Pace drops as you get faster, so first-minus-last is the gain.
+          // Pace falls as you get faster, so first-minus-last is the gain.
           const delta = own.length > 1 ? first.pace - last.pace : null;
           return (
-            <div key={b.key} className="flex items-center gap-2 text-[12px]">
-              <span className="size-2 shrink-0 rounded-full" style={{ background: themeToken(b.cssVar) }} />
-              <span className="text-ink-2">{b.label}</span>
+            <div key={c.key} className="flex items-center gap-2 text-[12px]">
+              <span className="size-2 shrink-0 rounded-full" style={{ background: themeToken(c.cssVar) }} />
+              <span className="text-ink-2">{c.label}</span>
               <span className="text-ink-3">
-                {own.length === 1
-                  ? fmtPace(last.pace)
-                  : `${fmtPace(first.pace)} → ${fmtPace(last.pace)}`}
+                {own.length === 1 ? fmtPace(last.pace) : `${fmtPace(first.pace)} → ${fmtPace(last.pace)}`}
               </span>
               {delta != null && Math.abs(delta) >= 1 && (
                 <span className={delta > 0 ? "text-positive" : "text-negative"}>
@@ -98,10 +111,17 @@ export function PaceProgress({ activities }: { activities: Activity[] }) {
                   {Math.abs(Math.round(delta))} s/km
                 </span>
               )}
+              <span className="text-ink-3">· {own.length}×</span>
             </div>
           );
         })}
       </div>
+
+      <p className="mt-3 text-[11px] leading-relaxed text-ink-3">
+        Ø-Tempo laut Garmin (Bewegungszeit). Ein Lauf zählt in jede Klasse, die er erreicht — ein 12-km-Lauf also
+        unter „ab 5 km" und „ab 10 km". Tippe einen Punkt an, um den Lauf zu öffnen.
+        {anyDerived && " Bei Einheiten ohne Garmin-Tempowert ist die Pace berechnet — im Tooltip mit „(berechnet)“ markiert."}
+      </p>
     </>
   );
 }
