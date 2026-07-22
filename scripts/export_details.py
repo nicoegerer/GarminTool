@@ -206,6 +206,31 @@ def main() -> int:
             failed += 1
 
     log(f"\nFertig. {written} neu, {skipped} aus Cache, {failed} fehlgeschlagen.")
+
+    # Garmins eigenes Bewegungs-Tempo steht nur im Detail-Summary, nicht in der
+    # Aktivitaetsliste. Die Statistik-Charts haben aber nur die Liste — also
+    # hier zurueckschreiben, damit dort Garmins Wert benutzt wird, statt die
+    # Pace selbst aus Zeit und Distanz zu rechnen.
+    enriched = 0
+    for act in activities:
+        path = detail_dir / f"{act['activityId']}.json"
+        if not path.exists():
+            continue
+        try:
+            summary = json.loads(path.read_text(encoding="utf-8")).get("summary") or {}
+        except Exception:  # noqa: BLE001
+            continue
+        for field in ("averageMovingSpeed", "minHR", "waterEstimated"):
+            value = summary.get(field)
+            if value is not None and act.get(field) is None:
+                act[field] = value
+                if field == "averageMovingSpeed":
+                    enriched += 1
+    index_path.write_text(
+        json.dumps(activities, ensure_ascii=False, separators=(",", ":"), default=str),
+        encoding="utf-8")
+    log(f"Aktivitaetsliste ergaenzt: {enriched} mit Garmins Bewegungs-Tempo.")
+
     (out_dir / "details_manifest.json").write_text(
         json.dumps({"count": len(list(detail_dir.glob('*.json'))), "gps": args.include_gps}),
         encoding="utf-8")
