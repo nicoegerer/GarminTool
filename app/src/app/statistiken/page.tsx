@@ -168,8 +168,11 @@ function Stats() {
 
         {/* Ersetzt das frühere "Lauf-Pace"-Chart: das warf alle Distanzen in eine
             Linie, wodurch ein langer Lauf wie ein Formverlust aussah. */}
+        {/* Bewusst die volle Historie statt des Seiten-Zeitfilters: lange
+            Distanzen kommen selten vor, im 90-Tage-Fenster bleibt davon
+            höchstens ein Punkt übrig — und ein Punkt zeigt keinen Fortschritt. */}
         <ChartCard title="Werde ich schneller?" hint="Ø-Pace je Distanzklasse · höher = schneller">
-          <PaceProgress activities={acts} onSelect={(a) => router.push(`/aktivitaeten/?a=${a.activityId}`)} />
+          <PaceProgress activities={activities} onSelect={(a) => router.push(`/aktivitaeten/?a=${a.activityId}`)} />
         </ChartCard>
 
         <ChartCard title="Rad-Tempo" hint="Ø je Fahrt über 10 km">

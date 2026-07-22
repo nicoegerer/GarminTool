@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
 import { Menu, Monitor, Moon, Sun, X } from "lucide-react";
 import { NAV, PRIMARY_NAV } from "@/lib/nav";
 import { cn } from "@/lib/format";
-import { useMountTransition } from "@/lib/use-mount-transition";
 import { useTheme } from "./theme";
 import { RefreshButton } from "./refresh-button";
 import { Background } from "./background";
@@ -105,7 +105,6 @@ function BottomNav() {
 
 /* ---------- Mobile burger menu ---------- */
 
-const MENU_EXIT_MS = 260;
 
 /**
  * The full navigation on mobile. The bottom bar only has room for four
@@ -115,7 +114,12 @@ const MENU_EXIT_MS = 260;
 function MobileMenu() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const mounted = useMountTransition(open, MENU_EXIT_MS);
+  // The drawer must leave the header's DOM subtree: the header carries
+  // `backdrop-filter`, which makes it the containing block for any fixed-
+  // position descendant. Rendered inline, the drawer was clipped to the ~50px
+  // header strip — it appeared to open but no link was reachable.
+  const [portal, setPortal] = useState<HTMLElement | null>(null);
+  useEffect(() => setPortal(document.body), []);
 
   // A tap on a link changes the route — close so the drawer never lingers.
   useEffect(() => setOpen(false), [pathname]);
@@ -138,21 +142,34 @@ function MobileMenu() {
         <Menu className="size-[19px]" strokeWidth={1.9} />
       </button>
 
-      {mounted && (
-        <div className="fixed inset-0 z-[95] lg:hidden" style={{ pointerEvents: open ? "auto" : "none" }}>
-          <motion.div
-            className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: open ? 1 : 0 }}
-            transition={{ duration: 0.2 }}
+      {/* Always mounted and driven by CSS classes, not motion: in this stack a
+          changing `animate` prop does not re-run: the panel stayed parked at
+          translateX(100%) off-screen, so the menu "opened" onto nothing. A
+          plain transition is deterministic here. */}
+      {portal && createPortal(
+        <div
+          className={cn("fixed inset-0 z-[95] lg:hidden", !open && "pointer-events-none")}
+          aria-hidden={!open}
+        >
+          <div
+            className={cn(
+              "absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity duration-200",
+              open ? "opacity-100" : "opacity-0",
+            )}
             onClick={() => setOpen(false)}
           />
-          <motion.nav
+          <nav
             className="absolute inset-y-0 right-0 flex w-72 max-w-[85vw] flex-col border-l border-line-soft bg-surface px-4 py-5"
-            initial={{ x: "100%" }}
-            animate={{ x: open ? 0 : "100%" }}
-            transition={{ type: "spring", stiffness: 420, damping: 40 }}
-            style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
+            // Inline transform, and deliberately NO transition on it. Two
+            // separate traps in this stack: Tailwind's translate-x-* utilities
+            // write the CSS `translate` property, which the open state failed
+            // to reset; and a CSS transition on the transform got stuck in its
+            // start phase, freezing the panel off-screen at 100%. Both left the
+            // menu open but unreachable. The backdrop still fades.
+            style={{
+              paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)",
+              transform: open ? "translateX(0)" : "translateX(100%)",
+            }}
           >
             <div className="mb-4 flex items-center justify-between">
               <span className="text-[15px] font-semibold tracking-tight">Navigation</span>
@@ -188,8 +205,9 @@ function MobileMenu() {
             <div className="mt-4 border-t border-line-soft pt-4">
               <ThemeToggle />
             </div>
-          </motion.nav>
-        </div>
+          </nav>
+        </div>,
+        portal,
       )}
     </>
   );
