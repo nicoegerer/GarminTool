@@ -52,8 +52,18 @@ export const DEFAULT_CONFIG: ProviderConfig = {
   geminiModel: "gemini-flash-lite-latest",
 };
 
-/** Tried in order; a rate-limited model hands off to the next. */
-export const GEMINI_FALLBACKS = ["gemini-flash-lite-latest", "gemini-flash-latest"];
+/**
+ * Tried in order; a rate-limited model hands off to the next.
+ *
+ * `thinking` says whether the model accepts a thinkingConfig. It matters both
+ * ways: the lite model rejects the field outright with a 400, while the plain
+ * flash model reasons by default and would spend the whole output budget on
+ * hidden thoughts, truncating the answer mid-sentence.
+ */
+export const GEMINI_MODELS: { id: string; thinking: boolean }[] = [
+  { id: "gemini-flash-lite-latest", thinking: false },
+  { id: "gemini-flash-latest", thinking: true },
+];
 
 export class AiError extends Error {
   constructor(

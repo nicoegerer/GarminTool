@@ -42,6 +42,15 @@ jobs:
         if: steps.check.outputs.skip == 'false'
         run: uv run scripts/export_data.py
 
+      - name: Aktivitätsdetails exportieren
+        if: steps.check.outputs.skip == 'false'
+        # Ohne diesen Schritt landen neue Aktivitäten zwar in der Liste, haben
+        # aber nie eine Detail-Datei — die Detailansicht blieb dann leer (keine
+        # HF-Zonen, Splits, Running Dynamics, SWOLF, Wetter). Der Export ist
+        # gecacht: bereits geholte Aktivitäten werden übersprungen, pro Lauf
+        # kommen also nur die neuen dazu.
+        run: uv run scripts/export_details.py
+
       - name: Änderungen committen
         if: steps.check.outputs.skip == 'false'
         run: |

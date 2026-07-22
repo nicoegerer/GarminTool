@@ -1,10 +1,11 @@
-import { AiError, GEMINI_FALLBACKS, type AiProvider, type ChatRequest, type ProviderConfig } from "./provider";
+import { AiError, GEMINI_MODELS, type AiProvider, type ChatRequest, type ProviderConfig } from "./provider";
 
 const BASE = "https://generativelanguage.googleapis.com/v1beta";
 
-/** Primary model first, then the shared fallback chain (deduped). */
-function modelChain(primary: string): string[] {
-  return [primary, ...GEMINI_FALLBACKS.filter((m) => m !== primary)];
+/** Primary model first, then the rest of the chain (deduped). */
+function modelChain(primary: string): { id: string; thinking: boolean }[] {
+  const known = GEMINI_MODELS.find((m) => m.id === primary);
+  return [known ?? { id: primary, thinking: false }, ...GEMINI_MODELS.filter((m) => m.id !== primary)];
 }
 
 /**
@@ -21,37 +22,42 @@ export const geminiProvider: AiProvider = {
   async *stream(req: ChatRequest, cfg: ProviderConfig) {
     if (!cfg.geminiKey.trim()) throw new AiError("Kein Gemini-API-Key hinterlegt.", "config");
 
-    const body = JSON.stringify({
-      systemInstruction: { parts: [{ text: req.system }] },
-      contents: req.messages.map((m) => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.content }],
-      })),
-      generationConfig: {
-        maxOutputTokens: req.maxTokens ?? 2048,
-        // The flash-latest aliases are 2.5+ models with "thinking" on by
-        // default. Those hidden tokens count against maxOutputTokens, so a long
-        // reply hit the cap and got cut off mid-sentence. We don't show the
-        // thoughts anyway — turn them off so the whole budget is the answer.
-        thinkingConfig: { thinkingBudget: 0 },
-      },
-    });
+    const buildBody = (thinking: boolean) =>
+      JSON.stringify({
+        systemInstruction: { parts: [{ text: req.system }] },
+        contents: req.messages.map((m) => ({
+          role: m.role === "assistant" ? "model" : "user",
+          parts: [{ text: m.content }],
+        })),
+        generationConfig: {
+          maxOutputTokens: req.maxTokens ?? 2048,
+          // Only for models that reason by default: their hidden thoughts count
+          // against maxOutputTokens and would truncate the answer mid-sentence.
+          // Models that don't reason reject the field with a 400.
+          ...(thinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+        },
+      });
 
     // Try each model in turn: if one's free daily quota is spent (429), fall
-    // through to the next instead of dead-ending the chat.
+    // through to the next instead of dead-ending the chat. A 400 on a model we
+    // sent thinkingConfig to means the alias moved to a model that rejects it —
+    // retry the same model without the field rather than failing the chat.
     const models = modelChain(cfg.geminiModel);
     let res: Response | null = null;
-    for (let i = 0; i < models.length; i++) {
-      res = await fetch(`${BASE}/models/${encodeURIComponent(models[i])}:streamGenerateContent?alt=sse`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-goog-api-key": cfg.geminiKey },
-        signal: req.signal,
-        body,
-      });
-      if (res.ok) break;
-      // On a rate limit with models left, try the next one; otherwise report.
-      if (res.status === 429 && i < models.length - 1) continue;
-      throw toError(res.status, await safeText(res));
+    outer: for (let i = 0; i < models.length; i++) {
+      const last = i === models.length - 1;
+      for (const thinking of models[i].thinking ? [true, false] : [false]) {
+        res = await fetch(`${BASE}/models/${encodeURIComponent(models[i].id)}:streamGenerateContent?alt=sse`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-goog-api-key": cfg.geminiKey },
+          signal: req.signal,
+          body: buildBody(thinking),
+        });
+        if (res.ok) break outer;
+        if (res.status === 400 && thinking) continue; // retry same model, no thinkingConfig
+        if (res.status === 429 && !last) continue outer; // quota spent → next model
+        throw toError(res.status, await safeText(res));
+      }
     }
     if (!res || !res.ok) throw new AiError("Gemini ist gerade nicht erreichbar.", "network");
     if (!res.body) throw new AiError("Gemini lieferte keinen Stream.", "network");

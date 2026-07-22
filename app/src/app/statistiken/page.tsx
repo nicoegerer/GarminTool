@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { inRange, useData, useGarmin, useVo2max, useWeekly } from "@/lib/data";
 import { Card, Empty, PageHeader, Skeleton } from "@/components/ui/primitives";
 import { LineChart } from "@/components/charts";
+import { PaceProgress } from "@/components/stats/pace-progress";
 import { themeToken } from "@/lib/theme-tokens";
 import { Tile } from "@/components/dashboard/sheet-parts";
 import {
@@ -176,6 +177,10 @@ function Stats() {
           ) : (
             <Empty>Zu wenige Läufe im Zeitraum.</Empty>
           )}
+        </ChartCard>
+
+        <ChartCard title="Werde ich schneller?" hint="Ø-Pace je Distanzklasse · höher = schneller">
+          <PaceProgress activities={acts} />
         </ChartCard>
 
         <ChartCard title="Rad-Tempo" hint="Ø je Fahrt über 10 km">
