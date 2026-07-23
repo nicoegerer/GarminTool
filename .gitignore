@@ -22,5 +22,5 @@ app/public/data/
 .claude/settings.local.json
 
 # Lokale Strava-Sync-Zugangsdaten und Logs (enthalten Secrets)
-files10/
+strava-sync-local/
 namen_sync.log
