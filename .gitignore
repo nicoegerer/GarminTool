@@ -17,3 +17,6 @@ app/node_modules/
 app/.next/
 app/out/
 app/public/data/
+
+# Lokale Claude-Code-Einstellungen (maschinenspezifisch)
+.claude/settings.local.json
