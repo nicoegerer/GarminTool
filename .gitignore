@@ -20,3 +20,7 @@ app/public/data/
 
 # Lokale Claude-Code-Einstellungen (maschinenspezifisch)
 .claude/settings.local.json
+
+# Lokale Strava-Sync-Zugangsdaten und Logs (enthalten Secrets)
+files10/
+namen_sync.log

@@ -38,6 +38,23 @@ jobs:
           mkdir -p "$HOME/.garminconnect"
           printf '%s' "$TOKENS" > "$HOME/.garminconnect/garmin_tokens.json"
 
+      - name: Strava-Namen nach Garmin übertragen
+        if: steps.check.outputs.skip == 'false'
+        env:
+          STRAVA_CONFIG_JSON: ${{ secrets.STRAVA_CONFIG_JSON }}
+        # Läuft VOR dem Export: benennst du eine Aktivität auf Strava um, steht
+        # der neue Name schon in Garmin, bevor die Daten gezogen werden — ein
+        # Klick auf "Aktualisieren" reicht also.
+        # Ohne continue-on-error würde ein Strava-Ausfall den gesamten
+        # Garmin-Export blockieren; die Namen sind das kleinere Gut.
+        continue-on-error: true
+        run: |
+          if [ -z "$STRAVA_CONFIG_JSON" ]; then
+            echo "Kein STRAVA_CONFIG_JSON-Secret gesetzt – Namensabgleich übersprungen."
+          else
+            uv run scripts/namen_sync.py --execute
+          fi
+
       - name: Daten exportieren
         if: steps.check.outputs.skip == 'false'
         run: uv run scripts/export_data.py
