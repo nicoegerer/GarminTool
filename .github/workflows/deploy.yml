@@ -46,8 +46,12 @@ jobs:
       - name: Bauen
         working-directory: app
         env:
-          # Projekt-Page liegt unter /GarminTool/, nicht im Wurzelverzeichnis.
-          NEXT_PUBLIC_BASE_PATH: /GarminTool
+          # KEIN basePath: die Seite läuft unter der eigenen Domain
+          # garmintool.nicoegerer.de und wird dort im Wurzelverzeichnis
+          # ausgeliefert. Mit /GarminTool zeigten alle Asset-Pfade auf
+          # /GarminTool/_next/… — unter der eigenen Domain ein 404, die Seite
+          # erschien ohne CSS und JS. Die alte Projekt-URL leitet ohnehin auf
+          # die eigene Domain um.
           # Gemini-Key wird ins Bundle gebacken, damit der Coach ohne Setup
           # läuft. Auf einer öffentlichen Seite ist er damit im JS sichtbar —
           # bewusst so gewählt (begrenztes Risiko: nur Google-Kontingent).
