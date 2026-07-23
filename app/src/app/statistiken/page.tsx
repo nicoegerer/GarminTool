@@ -183,7 +183,8 @@ function Stats() {
                 { label: "Trend", data: rollingMean(rides.map((a) => (a.averageSpeed ?? 0) * 3.6), 5), color: themeToken("--sport-ride") },
               ]}
               yFormat={(v) => `${v.toFixed(0)} km/h`}
-              tooltipFormat={(v, _l, i) => `${v.toFixed(1)} km/h · ${rides[i]?.activityName ?? ""}`}
+              tooltipFormat={(v, _l, i) => `${rides[i]?.activityName ?? "Radfahrt"} — ${v.toFixed(1)} km/h · ${fmtDateShort(rides[i]?.date ?? "")}`}
+              onPointClick={(i) => rides[i] && router.push(`/aktivitaeten/?a=${rides[i].activityId}`)}
             />
           ) : (
             <Empty>Zu wenige Radfahrten im Zeitraum.</Empty>
@@ -202,7 +203,8 @@ function Stats() {
                 },
               ]}
               yFormat={(v) => fmtPace100(v)}
-              tooltipFormat={(v, _l, i) => `${fmtPace100(v)} · ${swims[i]?.activityName ?? ""}`}
+              tooltipFormat={(v, _l, i) => `${swims[i]?.activityName ?? "Schwimmen"} — ${fmtPace100(v)} · ${fmtDateShort(swims[i]?.date ?? "")}`}
+              onPointClick={(i) => swims[i] && router.push(`/aktivitaeten/?a=${swims[i].activityId}`)}
               reverseY
             />
           ) : (
