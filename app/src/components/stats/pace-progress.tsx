@@ -9,30 +9,34 @@ import { typeLabel } from "@/lib/sports";
 import type { Activity } from "@/lib/types";
 
 /**
- * "Werde ich schneller?" — pace per distance class.
+ * "Werde ich schneller?" — pace grouped by target distance.
  *
- * A class is an UPPER bound: "bis 10 km" holds every run up to (and including)
- * ~10 km, and nothing longer — a 21 km run never lands in the 10 km stat, where
- * its slower pace would distort the trend. `hi` carries a little slack so a
- * GPS-measured "10 k" of 10.1 km still counts. `lo` is only used to decide
- * whether a class is worth showing (see `used`), not what it contains.
+ * Each class is a ±1 km band around a round race distance, so a run you stopped
+ * at 5.1 km or 4.9 km both count as "5 km". Bands don't overlap. A run that
+ * lands between bands (7 km, 18 km, …) belongs to no class and shows up only
+ * under "Alle".
  *
  * Y is reversed — a rising line means getting faster. Colours sit far apart in
  * hue rather than shades of one accent: several overlaid lines need contrast.
  */
-const CLASSES = [
-  { key: "5", label: "bis 5 km", short: "5 km", lo: 0, hi: 5200, cssVar: "--gold" },
-  { key: "10", label: "bis 10 km", short: "10 km", lo: 5200, hi: 10400, cssVar: "--sport-swim" },
-  { key: "15", label: "bis 15 km", short: "15 km", lo: 10400, hi: 15500, cssVar: "--sport-gym" },
-  { key: "21", label: "bis 21 km", short: "21 km", lo: 15500, hi: 21400, cssVar: "--sport-run" },
-  { key: "42", label: "bis Marathon", short: "Marathon", lo: 21400, hi: 42500, cssVar: "--positive" },
+const BANDS = [
+  { key: "5", label: "5 km", lo: 4000, hi: 6000, cssVar: "--gold" },
+  { key: "10", label: "10 km", lo: 9000, hi: 11000, cssVar: "--sport-swim" },
+  { key: "15", label: "15 km", lo: 14000, hi: 16000, cssVar: "--sport-gym" },
+  { key: "21", label: "Halbmarathon", lo: 20000, hi: 22000, cssVar: "--sport-run" },
+  { key: "42", label: "Marathon", lo: 41000, hi: 43000, cssVar: "--positive" },
 ];
+const OTHER_COLOR = "--ink-3";
+
+function bandOf(distance: number): string | null {
+  return BANDS.find((b) => distance >= b.lo && distance <= b.hi)?.key ?? null;
+}
 
 interface Entry {
   activity: Activity;
   date: string;
   pace: number;
-  /** True when Garmin gave no moving speed and the pace had to be derived. */
+  band: string | null;
   derived: boolean;
 }
 
@@ -49,8 +53,6 @@ function paceOf(a: Activity): { pace: number; derived: boolean } | null {
   return null;
 }
 
-const MAX = CLASSES[CLASSES.length - 1].hi;
-
 export function PaceProgress({
   activities,
   onSelect,
@@ -63,41 +65,45 @@ export function PaceProgress({
   const entries = useMemo<Entry[]>(() => {
     const rows: Entry[] = [];
     for (const a of activities) {
-      if (a.group !== "run" || !a.distance || a.distance > MAX) continue;
+      if (a.group !== "run" || !a.distance) continue;
       const p = paceOf(a);
       if (!p || !isFinite(p.pace)) continue;
-      rows.push({ activity: a, date: a.date, pace: p.pace, derived: p.derived });
+      rows.push({ activity: a, date: a.date, pace: p.pace, band: bandOf(a.distance), derived: p.derived });
     }
     return rows.sort((x, y) => x.date.localeCompare(y.date));
   }, [activities]);
 
-  // Show a class only when at least one run falls in its own band (lo, hi] —
-  // otherwise "bis Marathon" would appear for someone whose longest run is
-  // 18 km, listing every run just like the class below it.
-  const used = CLASSES.filter((c) => entries.some((e) => (e.activity.distance ?? 0) > c.lo && (e.activity.distance ?? 0) <= c.hi));
-  const active = used.find((c) => c.key === filter);
+  const usedBands = BANDS.filter((b) => entries.some((e) => e.band === b.key));
+  const active = usedBands.find((b) => b.key === filter);
 
-  const inClass = (e: Entry, c: (typeof CLASSES)[number]) => (e.activity.distance ?? 0) <= c.hi;
-
-  // One class selected: only its runs, so dates on the x axis carry meaning.
-  // All classes at once: the x positions of different classes don't line up,
-  // so a date axis would be misleading — the sequence is what's readable.
-  const shown = active ? entries.filter((e) => inClass(e, active)) : entries;
+  // One band selected: only its runs, so dates on the x axis carry meaning.
+  // "Alle": every run, so the date axis would misalign bands — sequence reads.
+  const shown = active ? entries.filter((e) => e.band === active.key) : entries;
 
   const series = useMemo<Series[]>(() => {
     if (active) {
       return [{ label: active.label, color: themeToken(active.cssVar), data: shown.map((e) => e.pace) }];
     }
-    return used.map((c) => ({
-      label: c.label,
-      color: themeToken(c.cssVar),
-      data: shown.map((e) => (inClass(e, c) ? e.pace : null)),
+    const bandSeries = usedBands.map((b) => ({
+      label: b.label,
+      color: themeToken(b.cssVar),
+      data: shown.map((e) => (e.band === b.key ? e.pace : null)),
     }));
-  }, [active, used, shown]);
+    // The "rest" — runs in no band — as a muted line, so nothing disappears.
+    if (shown.some((e) => e.band === null)) {
+      bandSeries.push({
+        label: "Sonstige",
+        color: themeToken(OTHER_COLOR),
+        data: shown.map((e) => (e.band === null ? e.pace : null)),
+      });
+    }
+    return bandSeries;
+  }, [active, usedBands, shown]);
 
   if (!entries.length) return <Empty>Noch keine Läufe.</Empty>;
 
   const anyDerived = shown.some((e) => e.derived);
+  const otherCount = entries.filter((e) => e.band === null).length;
 
   return (
     <>
@@ -105,9 +111,9 @@ export function PaceProgress({
         <FilterChip active={!active} onClick={() => setFilter("all")}>
           Alle
         </FilterChip>
-        {used.map((c) => (
-          <FilterChip key={c.key} active={filter === c.key} color={c.cssVar} onClick={() => setFilter(c.key)}>
-            {c.short}
+        {usedBands.map((b) => (
+          <FilterChip key={b.key} active={filter === b.key} color={b.cssVar} onClick={() => setFilter(b.key)}>
+            {b.label}
           </FilterChip>
         ))}
       </div>
@@ -130,16 +136,16 @@ export function PaceProgress({
       />
 
       <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-line-soft pt-4">
-        {(active ? [active] : used).map((c) => {
-          const own = entries.filter((e) => inClass(e, c));
+        {(active ? [active] : usedBands).map((b) => {
+          const own = entries.filter((e) => e.band === b.key);
           const first = own[0];
           const last = own[own.length - 1];
           // Pace falls as you get faster, so first-minus-last is the gain.
           const delta = own.length > 1 ? first.pace - last.pace : null;
           return (
-            <div key={c.key} className="flex items-center gap-2 text-[12px]">
-              <span className="size-2.5 shrink-0 rounded-full" style={{ background: themeToken(c.cssVar) }} />
-              <span className="text-ink-2">{c.label}</span>
+            <div key={b.key} className="flex items-center gap-2 text-[12px]">
+              <span className="size-2.5 shrink-0 rounded-full" style={{ background: themeToken(b.cssVar) }} />
+              <span className="text-ink-2">{b.label}</span>
               <span className="text-ink-3">
                 {own.length === 1 ? fmtPace(last.pace) : `${fmtPace(first.pace)} → ${fmtPace(last.pace)}`}
               </span>
@@ -156,9 +162,10 @@ export function PaceProgress({
       </div>
 
       <p className="mt-3 text-[11px] leading-relaxed text-ink-3">
-        Ø-Tempo laut Garmin (Bewegungszeit), gesamte Historie. Jede Klasse zeigt Läufe <em>bis</em> zu dieser Distanz —
-        ein 21-km-Lauf erscheint also nicht in der 10-km-Statistik. Fahr über einen Punkt für Name und Datum, tippe ihn
-        an, um den Lauf zu öffnen.
+        Ø-Tempo laut Garmin (Bewegungszeit), gesamte Historie. Läufe werden nach Zieldistanz gruppiert (±1 km): 4–6 km
+        zählen als „5 km", 9–11 km als „10 km" usw. Läufe dazwischen erscheinen nur unter „Alle"
+        {otherCount > 0 && ` (${otherCount}×)`}. Fahr über einen Punkt für Name und Datum, tippe ihn an, um den Lauf zu
+        öffnen.
         {anyDerived && " Fehlt Garmins Tempowert, ist die Pace berechnet — im Tooltip markiert."}
       </p>
     </>
