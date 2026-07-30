@@ -43,15 +43,26 @@ jobs:
         working-directory: app
         run: npm ci
 
+      - name: basePath bestimmen
+        id: base
+        # Eigene Domain (CNAME vorhanden) -> Seite liegt im Wurzelverzeichnis,
+        # KEIN basePath. Sonst Projekt-Page unter <user>.github.io/<repo>/ ->
+        # basePath = /<repo>, sonst zeigen alle Asset-Pfade ins Leere und die
+        # Seite erscheint ohne CSS/JS. So funktioniert auch jeder Fork ohne
+        # eigene Domain automatisch richtig.
+        run: |
+          if [ -f app/public/CNAME ]; then
+            echo "path=" >> "$GITHUB_OUTPUT"
+            echo "Eigene Domain erkannt (CNAME) – kein basePath."
+          else
+            echo "path=/${GITHUB_REPOSITORY#*/}" >> "$GITHUB_OUTPUT"
+            echo "Projekt-Page – basePath=/${GITHUB_REPOSITORY#*/}"
+          fi
+
       - name: Bauen
         working-directory: app
         env:
-          # KEIN basePath: die Seite läuft unter der eigenen Domain
-          # garmintool.nicoegerer.de und wird dort im Wurzelverzeichnis
-          # ausgeliefert. Mit /GarminTool zeigten alle Asset-Pfade auf
-          # /GarminTool/_next/… — unter der eigenen Domain ein 404, die Seite
-          # erschien ohne CSS und JS. Die alte Projekt-URL leitet ohnehin auf
-          # die eigene Domain um.
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.base.outputs.path }}
           # Gemini-Key wird ins Bundle gebacken, damit der Coach ohne Setup
           # läuft. Auf einer öffentlichen Seite ist er damit im JS sichtbar —
           # bewusst so gewählt (begrenztes Risiko: nur Google-Kontingent).
