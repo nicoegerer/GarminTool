@@ -23,6 +23,7 @@ export function MetricCard({
   animate = false,
   digits = 0,
   signed = false,
+  stale,
 }: {
   label: string;
   /** Pre-formatted string. With `animate`, it must parse as a number. */
@@ -30,6 +31,12 @@ export function MetricCard({
   unit?: string;
   delta?: { text: string; tone: "up" | "down" | "flat" };
   hint?: string;
+  /**
+   * Set when the number is not from today (e.g. "vor 2 Tagen"). Rendered
+   * separately from `hint` because `delta` suppresses the hint, and a value's
+   * age must never be the thing that gets hidden.
+   */
+  stale?: string | null;
   spark?: (number | null)[];
   onClick?: () => void;
   delay?: number;
@@ -51,7 +58,14 @@ export function MetricCard({
       className={cn("card group relative flex flex-col justify-between gap-3 p-5 text-left", onClick && "card-interactive")}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="text-[13px] leading-tight text-ink-3">{label}</p>
+        <p className="text-[13px] leading-tight text-ink-3">
+          {label}
+          {stale && (
+            <span className="ml-1.5 whitespace-nowrap rounded-full bg-caution/15 px-1.5 py-0.5 text-[10px] font-medium text-caution">
+              {stale}
+            </span>
+          )}
+        </p>
         {onClick && (
           <ChevronRight className="size-4 shrink-0 text-ink-3 opacity-0 transition-opacity group-hover:opacity-100" strokeWidth={2} />
         )}

@@ -1,5 +1,5 @@
 import type { Activity, GarminData } from "../types";
-import { fmtDur, fmtKm, fmtPace, fmtTime, median, paceFromSpeed } from "../format";
+import { fmtDur, fmtKm, fmtPace, fmtTime, lagDays, median, paceFromSpeed } from "../format";
 import { typeLabel } from "../sports";
 import type { UserPrefs } from "../prefs";
 
@@ -88,6 +88,15 @@ export function buildContext(data: GarminData, prefs: UserPrefs): string {
       ? `Schlaf (letzte Nächte mit Uhr): ${sleep.map((s) => `${s.date} Score ${s.score ?? "?"}/${fmtDur(s.total_s, { short: true })}`).join(" · ")}`
       : "Schlaf: keine Daten.",
   );
+  // Ohne diesen Hinweis behandelt das Modell den neuesten Schlafwert als
+  // "letzte Nacht", auch wenn die Uhr seit Tagen nicht getragen wurde.
+  const sleepLag = lagDays(sleep.at(-1)?.date, today);
+  if (sleep.length && sleepLag > 0) {
+    rec.push(
+      `WICHTIG: Für letzte Nacht liegt KEIN Schlafwert vor — der jüngste ist ${sleepLag} Tag(e) alt (${sleep.at(-1)!.date}). ` +
+        `Behandle ihn nicht als aktuellen Erholungszustand und schließe nicht auf die letzte Nacht.`,
+    );
+  }
   const bb = (daily.body_battery ?? []).filter((b) => b.highest != null).slice(-5);
   rec.push(bb.length ? `Body Battery (Hoch/Tief): ${bb.map((b) => `${b.date} ${b.highest}/${b.lowest}`).join(" · ")}` : "Body Battery: keine Daten.");
   const rhrRows = (daily.rhr ?? []).filter((r) => r.values?.restingHR != null);

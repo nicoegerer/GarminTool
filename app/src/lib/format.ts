@@ -46,6 +46,39 @@ export function fmtWeekday(iso: string): string {
   return parseDate(iso).toLocaleDateString("de-DE", { weekday: "short" });
 }
 
+/**
+ * How many days a dated value lags behind the export date. 0 = current.
+ *
+ * Health series only have entries for days the watch actually recorded, so the
+ * newest entry can be days old. Showing it without saying so reads as "this is
+ * today's value" — the reason a two-day-old sleep score looked like a bug.
+ */
+export function lagDays(iso: string | undefined, today: string): number {
+  if (!iso) return 0;
+  return Math.max(0, Math.round((parseDate(today).getTime() - parseDate(iso).getTime()) / 86400000));
+}
+
+/** Relative day label for a lagging value; null when the value is current. */
+export function fmtLag(iso: string | undefined, today: string): string | null {
+  const d = lagDays(iso, today);
+  if (!iso || d <= 0) return null;
+  if (d === 1) return "gestern";
+  if (d <= 6) return `vor ${d} Tagen`;
+  return fmtDateShort(iso);
+}
+
+/**
+ * Which night a sleep entry describes. Garmin dates a night by the morning it
+ * ended, so an entry dated like the export day is genuinely last night.
+ */
+export function fmtSleepNight(iso: string | undefined, today: string): string {
+  const d = lagDays(iso, today);
+  if (!iso) return "Letzte Nacht";
+  if (d <= 0) return "Letzte Nacht";
+  if (d === 1) return "Nacht zuvor";
+  return `Nacht zum ${fmtDateShort(iso)}`;
+}
+
 /* ---------- Zahlen & Einheiten ---------- */
 
 export function fmtDur(seconds?: number | null, opts: { short?: boolean } = {}): string {

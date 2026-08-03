@@ -6,7 +6,7 @@ import { LineChart } from "@/components/charts";
 import { themeToken } from "@/lib/theme-tokens";
 import { Empty } from "@/components/ui/primitives";
 import { inRange, useGarmin, useStreaks, useWeekly } from "@/lib/data";
-import { fmtDateShort, fmtDur, fmtKm, fmtNum, isoDate, median, parseDate, weekStart } from "@/lib/format";
+import { fmtDateShort, fmtDur, fmtKm, fmtNum, fmtSleepNight, isoDate, median, parseDate, weekStart } from "@/lib/format";
 import { SPORT_META, typeLabel } from "@/lib/sports";
 import { Explain, Legend, SheetChart, Tile } from "./sheet-parts";
 
@@ -107,14 +107,16 @@ export function SleepSheet({ open, onClose }: { open: boolean; onClose: () => vo
       ) : (
         <div className="space-y-7">
           <div className="grid grid-cols-3 gap-3">
-            <Tile label="Letzte Nacht" value={last.score ? `${last.score}` : "–"} hint={last.score ? "/100" : undefined} />
+            {/* Label folgt dem Datum: der neueste Eintrag ist nur dann "letzte
+                Nacht", wenn die Uhr letzte Nacht auch getragen wurde. */}
+            <Tile label={fmtSleepNight(last.date, today)} value={last.score ? `${last.score}` : "–"} hint={last.score ? "/100" : undefined} />
             <Tile label="Dauer" value={fmtDur(last.total_s, { short: true })} hint={fmtDateShort(last.date)} />
             {avgScore && <Tile label="Ø 14 Nächte" value={fmtNum(avgScore)} hint={avgDur ? fmtDur(avgDur, { short: true }) : undefined} />}
           </div>
 
           {stageTotal > 0 && (
             <section>
-              <h3 className="mb-3 text-sm font-semibold">Schlafphasen letzte Nacht</h3>
+              <h3 className="mb-3 text-sm font-semibold">Schlafphasen · {fmtSleepNight(last.date, today)}</h3>
               {/* Stacked bar: 2px surface gaps do the separating, not borders */}
               <div className="flex h-3 gap-[2px] overflow-hidden rounded-full">
                 {stages.map((s) => (

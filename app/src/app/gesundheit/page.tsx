@@ -6,7 +6,7 @@ import { Card, Empty, PageHeader, Skeleton } from "@/components/ui/primitives";
 import { LineChart } from "@/components/charts";
 import { themeToken } from "@/lib/theme-tokens";
 import { Explain, Tile } from "@/components/dashboard/sheet-parts";
-import { cn, fmtDateShort, fmtDur, fmtNum, median } from "@/lib/format";
+import { cn, fmtDateShort, fmtDur, fmtLag, fmtNum, median } from "@/lib/format";
 
 export default function HealthPage() {
   const { loading, error } = useData();
@@ -54,9 +54,24 @@ function Health() {
 
   const rhrBase = median(rhr.slice(-30).map((r) => r.v));
 
+  /**
+   * Appends how old a value is. These series only hold days the watch recorded,
+   * so the newest entry can be days back — without the age, a stale number
+   * reads as today's.
+   */
+  const withLag = (hint: string | undefined, iso: string | undefined) =>
+    [hint, fmtLag(iso, today)].filter(Boolean).join(" · ") || undefined;
+
   return (
     <>
-      <PageHeader kicker="Gesundheit" title="Erholung & Alltag" sub="Nur Tage, an denen du die Uhr getragen hast." />
+      {/* Abdeckung konkret nennen: Lücken in diesen Reihen entstehen dadurch,
+          dass die Uhr nicht getragen wurde — ohne die Zahl sieht ein fehlender
+          Tag wie ein Fehler der App aus. */}
+      <PageHeader
+        kicker="Gesundheit"
+        title="Erholung & Alltag"
+        sub={`Nur Tage, an denen du die Uhr getragen hast — Schlaf in ${sleep.length} von ${days >= 9999 ? "allen" : days} Nächten erfasst.`}
+      />
 
       <div className="mb-5 flex flex-wrap gap-1.5">
         {RANGES.map((r) => (
@@ -74,10 +89,22 @@ function Health() {
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Tile label="Ruhepuls" value={rhr.at(-1) ? `${rhr.at(-1)!.v}` : "–"} hint={rhrBase ? `Median ${fmtNum(rhrBase)}` : "bpm"} />
-        <Tile label="Schlaf" value={sleep.at(-1)?.score ? `${sleep.at(-1)!.score}` : "–"} hint={sleep.at(-1) ? fmtDur(sleep.at(-1)!.total_s, { short: true }) : undefined} />
-        <Tile label="Body Battery" value={bb.at(-1)?.highest != null ? `${bb.at(-1)!.highest}` : "–"} hint={bb.at(-1)?.lowest != null ? `Tief ${bb.at(-1)!.lowest}` : undefined} />
-        <Tile label="Stress Ø" value={stress.at(-1) ? `${stress.at(-1)!.v}` : "–"} hint="0–100" />
+        <Tile
+          label="Ruhepuls"
+          value={rhr.at(-1) ? `${rhr.at(-1)!.v}` : "–"}
+          hint={withLag(rhrBase ? `Median ${fmtNum(rhrBase)}` : "bpm", rhr.at(-1)?.date)}
+        />
+        <Tile
+          label="Schlaf"
+          value={sleep.at(-1)?.score ? `${sleep.at(-1)!.score}` : "–"}
+          hint={withLag(sleep.at(-1) ? fmtDur(sleep.at(-1)!.total_s, { short: true }) : undefined, sleep.at(-1)?.date)}
+        />
+        <Tile
+          label="Body Battery"
+          value={bb.at(-1)?.highest != null ? `${bb.at(-1)!.highest}` : "–"}
+          hint={withLag(bb.at(-1)?.lowest != null ? `Tief ${bb.at(-1)!.lowest}` : undefined, bb.at(-1)?.date)}
+        />
+        <Tile label="Stress Ø" value={stress.at(-1) ? `${stress.at(-1)!.v}` : "–"} hint={withLag("0–100", stress.at(-1)?.date)} />
       </div>
 
       <div className="space-y-4">

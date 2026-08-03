@@ -10,7 +10,7 @@ import { RhrSheet, SleepSheet, StreakSheet, WeekSheet } from "@/components/dashb
 import { ActivitySheet } from "@/components/dashboard/activity-sheet";
 import { Card, Empty, PageHeader, Skeleton } from "@/components/ui/primitives";
 import { themeToken } from "@/lib/theme-tokens";
-import { fmtDur, fmtKm, fmtNum, fmtTime, median } from "@/lib/format";
+import { fmtDur, fmtKm, fmtLag, fmtNum, fmtSleepNight, fmtTime, median } from "@/lib/format";
 import { SPORT_META, typeLabel } from "@/lib/sports";
 import type { Activity } from "@/lib/types";
 
@@ -159,6 +159,7 @@ function Dashboard() {
             }
             spark={rhrRows.slice(-30).map((r) => r.values.restingHR)}
             accent={themeToken("--sport-run")}
+            stale={fmtLag(rhrLast.calendarDate, data.today)}
             onClick={() => setSheet("rhr")}
             delay={0.2}
           />
@@ -169,7 +170,8 @@ function Dashboard() {
             value={sleepLast.score ? `${sleepLast.score}` : "–"}
             animate={Boolean(sleepLast.score)}
             unit={sleepLast.score ? "/100" : undefined}
-            hint={fmtDur(sleepLast.total_s, { short: true })}
+            hint={`${fmtDur(sleepLast.total_s, { short: true })} · ${fmtSleepNight(sleepLast.date, data.today)}`}
+            stale={fmtLag(sleepLast.date, data.today)}
             spark={(data.daily.sleep_scores ?? []).slice(-14).map((s) => s.score)}
             accent={themeToken("--sport-gym")}
             onClick={() => setSheet("sleep")}
