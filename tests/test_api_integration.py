@@ -47,6 +47,7 @@ class OfficialTransport:
         self.session.get.side_effect = self.get
         self.calls = []
         self.fail = None
+        self.weight = 72.5
 
     def get(self, url, *, headers, params, timeout):
         self.calls.append((url, params))
@@ -180,7 +181,7 @@ class OfficialTransport:
                         "allWeightMetrics": [
                             {
                                 "calendarDate": DAY.isoformat(),
-                                "weight": 72.5,
+                                "weight": self.weight,
                                 "bodyFat": 15,
                             }
                         ],
@@ -267,6 +268,11 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(manifest["sections"]["daily.vo2max"]["status"], "unavailable")
         self.assertTrue(manifest["sections"]["daily.stress"]["retained"])
         self.assertNotIn("private upstream content", json.dumps(manifest))
+
+    def test_live_gram_weights_are_not_scaled_twice(self):
+        self.transport.weight = 72500
+        export_data.export(self.client, self.out, 2)
+        self.assertEqual(self.read("body")["weigh_ins"][0]["weight_g"], 72500)
 
     def test_required_failure_does_not_publish_partial_export(self):
         export_data.write_json(self.out, "activities", [{"activityId": 55}])
