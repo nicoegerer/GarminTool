@@ -4,12 +4,12 @@
 # ///
 """Validate an official Garmin Personal API key and optionally save it locally.
 
-    uv run scripts/setup_garmin_token.py
-    uv run scripts/setup_garmin_token.py --check
+    uv run scripts/setup_garmin_api.py
+    uv run scripts/setup_garmin_api.py --check
 
 Create the key at https://connect.garmin.com/app/settings/personalApiToken.
 For GitHub Actions, store that key directly as GARMIN_PERSONAL_API_KEY.
-The historical script name is retained; no password/MFA login is performed.
+Authentication and bearer-token renewal use Garmin's official Python SDK.
 """
 
 import argparse

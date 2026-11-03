@@ -14,6 +14,10 @@ Garmin-Passwort und kein Garmin-MCP benötigt.
 4. Nach erfolgreichem Wechsel das alte Secret `GARMIN_TOKENS_JSON` entfernen.
    Alte lokale Garmin-MCP-/`garminconnect`-Tokenstores werden nicht mehr gelesen.
 
+Die alten Skriptnamen `setup_garmin_token.py` und `namen_sync.py` wurden
+entfernt. Die aktuellen Befehle heißen `scripts/setup_garmin_api.py` und
+`scripts/sync_strava_names.py`; die offizielle Strava-Freigabe bleibt gültig.
+
 Ein vorhandenes `STRAVA_CONFIG_JSON` mit `strava_client_id`,
 `strava_client_secret` und `strava_refresh_token` kann weiterverwendet werden,
 sofern der Refresh-Token noch gültig ist. Andernfalls Strava wie unten erneut
@@ -22,6 +26,45 @@ freigeben. Die Tokens werden bei der Umstellung nicht in Logs ausgegeben.
 Die Garmin Personal API ist **read-only**. Der Strava-Namensabgleich aktualisiert
 jetzt ausschließlich die Dashboard-Dateien. Er benennt keine Aktivitäten im
 Garmin-Konto um. Siehe [offizielle Endpunktdokumentation](https://developer.garmin.com/gc-developer-program/personal/swagger-docs/).
+
+## Warum nicht einfach zwei Keys?
+
+Für den Datenabruf sind es tatsächlich nur **zwei Secret-Einträge**:
+
+| Secret | Funktion | Kann weg? |
+| --- | --- | --- |
+| `GARMIN_PERSONAL_API_KEY` | Offizieller persönlicher Garmin-API-Schlüssel | Nein, solange Garmin genutzt wird |
+| `STRAVA_CONFIG_JSON` | Die offiziellen Strava-OAuth-Zugangsdaten in einem JSON-Block | Nur wenn Strava-Namen nicht benötigt werden |
+| `NEXT_PUBLIC_GEMINI_KEY` | Zugriff des KI-Coachs auf Google Gemini | Wenn der KI-Coach nicht benötigt wird |
+| `NEXT_PUBLIC_DISPATCH_TOKEN` | Berechtigung, von der Website aus einen GitHub-Workflow zu starten | Wenn der automatische Zwei-Stunden-Abruf genügt |
+| `GARMIN_TOKENS_JSON` | Früherer inoffizieller Garmin-Login | Nach erfolgreicher Migration löschen |
+
+Stravas offizieller Anmeldeweg ist OAuth. Dabei identifiziert die **Client-ID**
+die Anwendung, das **Client-Secret** authentifiziert sie, und der
+**Refresh-Token** repräsentiert die erteilte Kontofreigabe. Alle drei Werte
+liegen zusammen in `STRAVA_CONFIG_JSON`. Der daraus bezogene **Access-Token**
+wird automatisch erneuert und braucht keinen eigenen Secret-Eintrag. Der
+Abruf läuft direkt zwischen GitHub Actions und Strava.
+
+Die lokale Datei `strava-sync-local/config.json` enthält dieselben offiziellen
+OAuth-Zugangsdaten für lokale Aufrufe. Sie wird nicht eingecheckt. Der
+verschlüsselte Tokenstatus unter `.github/api-state/` ist für die automatische
+Strava-Tokenrotation weiterhin erforderlich.
+
+Die beiden optionalen Secrets gehören zu Google und GitHub. Ein Garmin- oder
+Strava-Key berechtigt nicht zu deren Diensten. GitHub stellt dem geplanten
+Workflow seinen eingebauten `GITHUB_TOKEN` automatisch bereit; dafür muss kein
+weiteres Secret angelegt werden. Der zusätzliche Dispatch-Token wird nur
+gebraucht, wenn der Button im Browser sofort einen neuen API-Abruf starten soll.
+Ohne ihn lädt der Button den zuletzt veröffentlichten Datenstand. Ohne
+Gemini-Key ist der KI-Coach nicht verfügbar; Garmin-/Strava-Export und Website
+funktionieren weiterhin.
+
+Projektbezogene alte `.garmin_tokens/`- oder `.garminconnect/`-Ordner und
+`namen_sync.log` können entfernt werden, sofern sie ausschließlich für die alte
+GarminTool-Anbindung genutzt wurden. Die aktuellen SDK-Schlüssel und
+`.api-state/` bleiben erhalten. In dieser Repository-Version gibt es keinen
+Passwort-/MFA-Login und keinen Rückfall auf die inoffizielle Garmin-API mehr.
 
 ## 1. Repo forken
 
@@ -44,7 +87,7 @@ installiert die Skriptabhängigkeiten automatisch. Optional den Schlüssel einma
 lokal eingeben und prüfen:
 
 ```bash
-uv run scripts/setup_garmin_token.py
+uv run scripts/setup_garmin_api.py
 ```
 
 Das Skript fragt ausschließlich den API-Schlüssel verdeckt ab und speichert ihn
@@ -54,7 +97,7 @@ Umgebungsvariable `GARMIN_PERSONAL_API_KEY`. Der lokale Bearer-Cache liegt in
 `.api-state/` und ist von Git ausgeschlossen.
 
 ```bash
-uv run scripts/setup_garmin_token.py --check
+uv run scripts/setup_garmin_api.py --check
 uv run scripts/export_data.py
 uv run scripts/export_details.py
 ```
@@ -68,7 +111,7 @@ Referenzen: [Garmin Personal API](https://developer.garmin.com/gc-developer-prog
    anlegen. **Authorization Callback Domain:** `localhost`.
 2. Im Repo ausführen:
    ```bash
-   uv run scripts/namen_sync.py --setup
+   uv run scripts/sync_strava_names.py --setup
    ```
    Client ID und Client Secret eingeben und die Freigabe im Browser bestätigen.
    Das Skript benötigt `activity:read_all`, damit auch private Aktivitäten
@@ -78,8 +121,8 @@ Referenzen: [Garmin Personal API](https://developer.garmin.com/gc-developer-prog
    `STRAVA_CONFIG_JSON` hinterlegen. Die Datei ist von Git ausgeschlossen.
 4. Lokal nach dem Garmin-Export ausführen:
    ```bash
-   uv run scripts/namen_sync.py            # Anzahl gefundener Änderungen
-   uv run scripts/namen_sync.py --execute  # Namen im Dashboard speichern
+   uv run scripts/sync_strava_names.py            # Anzahl gefundener Änderungen
+   uv run scripts/sync_strava_names.py --execute  # Namen im Dashboard speichern
    ```
 
 Die Zuordnung berücksichtigt Sportart und lokale Startzeit. Automatiknamen wie

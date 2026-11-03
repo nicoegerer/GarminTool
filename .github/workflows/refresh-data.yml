@@ -62,7 +62,7 @@ jobs:
           if [ -z "$STRAVA_CONFIG_JSON" ]; then
             echo "Kein STRAVA_CONFIG_JSON gesetzt – Namensabgleich übersprungen."
           else
-            uv run scripts/namen_sync.py --execute
+            uv run scripts/sync_strava_names.py --execute
           fi
 
       - name: Änderungen committen
