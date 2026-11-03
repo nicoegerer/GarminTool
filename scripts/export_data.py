@@ -1,20 +1,14 @@
 # /// script
-# requires-python = ">=3.11"
-# dependencies = ["garminconnect>=0.3.5"]
+# requires-python = ">=3.12"
+# dependencies = ["garmin-connect-personal-api-python==1.0.0"]
 # ///
-"""Exports ALL available Garmin Connect data domains into static JSON files
-consumed by the GitHub-Pages dashboard in docs/.
+"""Export Garmin's official Personal API to the dashboard's static JSON schema.
 
-Usage:
     uv run scripts/export_data.py [--days 400] [--out docs/data]
 
-Auth: reuses the token store of the Garmin MCP / garminconnect
-(GARMINTOKENS env var, default ~/.garminconnect). No credentials are
-stored or printed by this script.
-
-Every domain is fetched defensively: a failing endpoint is recorded in
-manifest.json but never aborts the export (Garmin's private API is
-undocumented and shifts between device/account types).
+Uses GARMIN_PERSONAL_API_KEY or the official SDK's local key file. Unsupported
+Personal API domains retain their historical export and are marked unavailable
+in manifest.json. No Garmin password, MCP, or private Connect API is used.
 """
 
 from __future__ import annotations
@@ -22,519 +16,307 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import os
 import sys
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
+from functools import cache
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
-from garminconnect import Garmin
+from garmin_api import authentication_failed, create_client, error_message
 
 TODAY = date.today()
 
-manifest: dict[str, Any] = {"generated_at": datetime.now().astimezone().isoformat(), "sections": {}}
+
+def log(message: str) -> None:
+    print(message, flush=True)
 
 
-def log(msg: str) -> None:
-    print(msg, flush=True)
+def read_json(path: Path, default=None):
+    if not path.exists():
+        return default
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
-def section(name: str, fn: Callable[[], Any]) -> Any:
-    try:
-        result = fn()
-        count = len(result) if isinstance(result, (list, dict)) else (1 if result is not None else 0)
-        manifest["sections"][name] = {"ok": True, "count": count}
-        log(f"OK   {name}: {count}")
-        return result
-    except Exception as exc:  # noqa: BLE001 - defensive by design
-        manifest["sections"][name] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-        log(f"FAIL {name}: {type(exc).__name__}: {exc}")
-        return None
-
-
-def write_json(out_dir: Path, name: str, data: Any) -> None:
-    if data is None:
+def write_json(out: Path, name: str, value: Any) -> None:
+    if value is None:
         return
-    if isinstance(data, (list, dict)) and not data:
-        return
-    path = out_dir / f"{name}.json"
-    path.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str), encoding="utf-8")
-    log(f"WROTE {path.name} ({path.stat().st_size // 1024} KB)")
+    path = out / f"{name}.json"
+    temporary = path.with_suffix(".json.tmp")
+    temporary.write_text(
+        json.dumps(value, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
+    )
+    temporary.replace(path)
 
 
-def chunked_dates(start: date, end: date, chunk_days: int) -> list[tuple[date, date]]:
-    chunks = []
-    cur = start
-    while cur <= end:
-        chunk_end = min(cur + timedelta(days=chunk_days - 1), end)
-        chunks.append((cur, chunk_end))
-        cur = chunk_end + timedelta(days=1)
-    return chunks
-
-
-def connect_range(client: Garmin, path_tpl: str, start: date, end: date, chunk_days: int = 28, list_key: str | None = None) -> list[dict]:
-    """Fetch a daily-stats range endpoint in chunks, concatenating results."""
-    items: list[dict] = []
-    for c_start, c_end in chunked_dates(start, end, chunk_days):
-        raw = client.connectapi(path_tpl.format(start=c_start.isoformat(), end=c_end.isoformat()))
-        if raw is None:
-            continue
-        if isinstance(raw, dict):
-            raw = raw.get(list_key) if list_key else raw.get("values") or raw.get("entries") or list(raw.values())[0] if raw else []
-        if isinstance(raw, list):
-            items.extend(x for x in raw if isinstance(x, dict))
-    return items
-
-
-# ---------------------------------------------------------------------------
-# Domain exporters
-# ---------------------------------------------------------------------------
-
-def export_profile(client: Garmin) -> dict:
-    profile: dict[str, Any] = {}
-    profile["full_name"] = section("profile.full_name", client.get_full_name)
-    profile["unit_system"] = section("profile.unit_system", client.get_unit_system)
-    up = section("profile.user_profile", client.get_user_profile) or {}
-    # keep only non-sensitive, dashboard-relevant bits
-    user_data = up.get("userData") or {}
-    profile["user"] = {
-        # birthDate deliberately not exported (public site)
-        "gender": user_data.get("gender"),
-        "weight_g": user_data.get("weight"),
-        "height_cm": user_data.get("height"),
-        "vo2max_running": user_data.get("vo2MaxRunning"),
-        "vo2max_cycling": user_data.get("vo2MaxCycling"),
-        "lactate_threshold_speed": user_data.get("lactateThresholdSpeed"),
-        "lactate_threshold_hr": user_data.get("lactateThresholdHeartRate"),
-        "activity_level": user_data.get("activityLevel"),
-        "intensity_minutes_weekly_goal": (up.get("userDailySummary") or {}).get("moderateIntensityMinutesGoal"),
-    }
-    devices = section("profile.devices", client.get_devices) or []
-    profile["devices"] = [
-        {
-            "name": d.get("productDisplayName") or d.get("displayName"),
-            "last_sync": d.get("lastUploadTimestamp") or d.get("uploadDate"),
-            "primary": d.get("primaryActivityTrackerIndicator"),
+class Exporter:
+    def __init__(self, out: Path):
+        self.out = out
+        self._previous: dict[str, Any] = {}
+        self.manifest = {
+            "generated_at": datetime.now().astimezone().isoformat(),
+            "source": "garmin_personal_api",
+            "sections": {},
         }
-        for d in devices
-        if isinstance(d, dict)
-    ]
-    return profile
+
+    def previous_file(self, name: str):
+        if name not in self._previous:
+            self._previous[name] = read_json(self.out / f"{name}.json")
+        return self._previous[name]
+
+    def previous(self, name: str):
+        file, _, key = name.partition(".")
+        value = self.previous_file(file)
+        if not key:
+            return value
+        return value.get(key) if isinstance(value, dict) else None
+
+    def section(self, name: str, fetch: Callable, *, default=None, required=False):
+        try:
+            result = fetch()
+        except Exception as exc:
+            if required or authentication_failed(exc):
+                raise
+            previous = self.previous(name)
+            self.manifest["sections"][name] = {
+                "ok": False,
+                "error": error_message(exc),
+                "retained": previous is not None,
+            }
+            log(f"FAIL {name}: {error_message(exc)}")
+            return previous if previous is not None else default
+        self.manifest["sections"][name] = {
+            "ok": True,
+            "count": len(result)
+            if isinstance(result, (list, dict))
+            else int(result is not None),
+        }
+        return result
+
+    def unavailable(self, name: str, default=None):
+        previous = self.previous(name)
+        self.manifest["sections"][name] = {
+            "ok": False,
+            "status": "unavailable",
+            "error": "Dieser Datenbereich ist in der Garmin Personal API nicht verfügbar.",
+            "retained": previous is not None,
+        }
+        return previous if previous is not None else default
+
+
+def chunked_dates(start: date, end: date, days: int):
+    while start <= end:
+        last = min(start + timedelta(days=days - 1), end)
+        yield start, last
+        start = last + timedelta(days=1)
+
+
+def range_rows(
+    fetch: Callable, start: date, end: date, days: int, key: str | None = None
+):
+    result = []
+    for first, last in chunked_dates(start, end, days):
+        rows = fetch(first, last)
+        if key and isinstance(rows, dict):
+            rows = rows.get(key, [])
+        if rows is None:
+            continue
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise ValueError("Unexpected API response shape")
+        result.extend(rows)
+    return result
 
 
 ACTIVITY_FIELDS = [
-    "activityId", "activityName", "startTimeLocal", "duration", "movingDuration", "distance",
-    "elevationGain", "elevationLoss", "averageSpeed", "averageMovingSpeed", "maxSpeed", "calories", "bmrCalories",
-    "averageHR", "maxHR", "steps", "avgStrideLength", "averageRunningCadenceInStepsPerMinute",
-    "aerobicTrainingEffect", "anaerobicTrainingEffect", "trainingEffectLabel", "activityTrainingLoad",
-    "vO2MaxValue", "avgPower", "maxPower", "normPower", "trainingStressScore", "intensityFactor",
-    "moderateIntensityMinutes", "vigorousIntensityMinutes", "differenceBodyBattery",
-    "hrTimeInZone_1", "hrTimeInZone_2", "hrTimeInZone_3", "hrTimeInZone_4", "hrTimeInZone_5",
-    "totalSets", "totalReps", "activeSets", "eventTypeDTO", "averageSwimCadenceInStrokesPerMinute",
-    "poolLength", "strokes", "avgStress", "locationName",
-    "lapCount", "waterEstimated", "minTemperature", "maxTemperature",
+    "activityId",
+    "activityName",
+    "startTimeLocal",
+    "duration",
+    "movingDuration",
+    "distance",
+    "elevationGain",
+    "elevationLoss",
+    "averageSpeed",
+    "averageMovingSpeed",
+    "maxSpeed",
+    "calories",
+    "bmrCalories",
+    "averageHR",
+    "maxHR",
+    "steps",
+    "avgStrideLength",
+    "averageRunningCadenceInStepsPerMinute",
+    "aerobicTrainingEffect",
+    "anaerobicTrainingEffect",
+    "trainingEffectLabel",
+    "activityTrainingLoad",
+    "vO2MaxValue",
+    "avgPower",
+    "maxPower",
+    "normPower",
+    "trainingStressScore",
+    "intensityFactor",
+    "moderateIntensityMinutes",
+    "vigorousIntensityMinutes",
+    "differenceBodyBattery",
+    "hrTimeInZone_1",
+    "hrTimeInZone_2",
+    "hrTimeInZone_3",
+    "hrTimeInZone_4",
+    "hrTimeInZone_5",
+    "totalSets",
+    "totalReps",
+    "activeSets",
+    "eventTypeDTO",
+    "averageSwimCadenceInStrokesPerMinute",
+    "poolLength",
+    "strokes",
+    "avgStress",
+    "locationName",
+    "lapCount",
+    "waterEstimated",
+    "minTemperature",
+    "maxTemperature",
 ]
 # NOTE: startLatitude/startLongitude deliberately excluded — the exported JSON
 # is published on a public GitHub Pages site.
 
 
-def export_activities(client: Garmin) -> list[dict]:
-    def fetch() -> list[dict]:
-        # Page through the activity-search endpoint instead of
-        # get_activities_by_date: the by-date index silently drops very recent
-        # or data-less activities (a short treadmill test with 0 distance never
-        # showed up), so a "refresh" right after a workout found nothing. The
-        # paginated list returns everything, newest first.
-        raw: list[dict] = []
-        seen: set[Any] = set()
-        start, page = 0, 100
-        while True:
-            batch = client.get_activities(start, page) or []
-            new = [a for a in batch if isinstance(a, dict)]
-            raw.extend(new)
-            if len(batch) < page or start > 10000:
-                break
-            start += page
-
-        acts = []
-        for a in raw:
-            aid = a.get("activityId")
+def fetch_activities(client, previous: list[dict]) -> list[dict]:
+    known = {str(a["activityId"]): a for a in previous}
+    activities, seen = [], set()
+    offset, size = 0, 100
+    while True:
+        batch = client.search_activities(start=offset, limit=size)
+        if not isinstance(batch, list):
+            raise TypeError("Unexpected activity response")
+        new = 0
+        for raw in batch:
+            aid = raw.get("activityId")
+            if not isinstance(aid, int) or aid <= 0:
+                raise ValueError("Invalid activity ID")
             if aid in seen:
                 continue
             seen.add(aid)
-            slim = {k: a.get(k) for k in ACTIVITY_FIELDS if a.get(k) is not None}
-            atype = a.get("activityType") or {}
-            slim["typeKey"] = atype.get("typeKey")
-            parent = atype.get("parentTypeId")
-            if parent is not None:
-                slim["parentTypeId"] = parent
-            slim["eventType"] = (a.get("eventType") or {}).get("typeKey")
-            acts.append(slim)
-        acts.sort(key=lambda x: x.get("startTimeLocal") or "", reverse=True)
-        return acts
-
-    return section("activities", fetch) or []
-
-
-def export_daily(client: Garmin, start: date) -> dict:
-    daily: dict[str, Any] = {}
-
-    daily["steps"] = section("daily.steps", lambda: connect_range(
-        client, "/usersummary-service/stats/steps/daily/{start}/{end}", start, TODAY))
-
-    daily["stress"] = section("daily.stress", lambda: connect_range(
-        client, "/usersummary-service/stats/stress/daily/{start}/{end}", start, TODAY))
-
-    daily["rhr"] = section("daily.rhr", lambda: connect_range(
-        client, "/usersummary-service/stats/heartRate/daily/{start}/{end}", start, TODAY))
-
-    def sleep_scores() -> list[dict]:
-        """No working range endpoint on this account type -> per-day loop.
-        Bounded to 150 days to keep the export fast; the watch is not worn
-        every night, so gaps are expected."""
-        out = []
-        for i in range(150):
-            d = (TODAY - timedelta(days=i)).isoformat()
-            try:
-                raw = client.get_sleep_data(d)
-            except Exception:  # noqa: BLE001
-                continue
-            dto = (raw or {}).get("dailySleepDTO") or {}
-            if not dto.get("sleepTimeSeconds"):
-                continue
-            out.append({
-                "date": dto.get("calendarDate") or d,
-                "score": ((dto.get("sleepScores") or {}).get("overall") or {}).get("value"),
-                "total_s": dto.get("sleepTimeSeconds"),
-                "deep_s": dto.get("deepSleepSeconds"),
-                "light_s": dto.get("lightSleepSeconds"),
-                "rem_s": dto.get("remSleepSeconds"),
-                "awake_s": dto.get("awakeSleepSeconds"),
-            })
-        return out
-
-    daily["sleep_scores"] = section("daily.sleep_scores", sleep_scores)
-
-    def hrv() -> list[dict]:
-        out = []
-        for c_start, c_end in chunked_dates(start, TODAY, 180):
-            raw = client.connectapi(
-                f"/hrv-service/hrv/daily/{c_start.isoformat()}/{c_end.isoformat()}") or {}
-            for s in raw.get("hrvSummaries") or []:
-                out.append({
-                    "date": s.get("calendarDate"),
-                    "avg": s.get("lastNightAvg"),
-                    "status": s.get("status"),
-                    "weekly_avg": s.get("weeklyAvg"),
-                    "baseline": s.get("baseline"),
-                })
-        return out
-
-    daily["hrv"] = section("daily.hrv", hrv)
-
-    def body_battery() -> list[dict]:
-        entries = []
-        for c_start, c_end in chunked_dates(start, TODAY, 28):
-            raw = client.get_body_battery(c_start.isoformat(), c_end.isoformat()) or []
-            for e in raw:
-                if not isinstance(e, dict):
-                    continue
-                values = [v[1] for v in e.get("bodyBatteryValuesArray") or [] if isinstance(v, list) and len(v) > 1 and v[1] is not None]
-                entries.append({
-                    "date": e.get("date"),
-                    "charged": e.get("charged"),
-                    "drained": e.get("drained"),
-                    "highest": max(values) if values else None,
-                    "lowest": min(values) if values else None,
-                })
-        return entries
-
-    daily["body_battery"] = section("daily.body_battery", body_battery)
-
-    daily["vo2max"] = section("daily.vo2max", lambda: [
-        {
-            "date": (g.get("generic") or {}).get("calendarDate"),
-            "vo2max": (g.get("generic") or {}).get("vo2MaxPreciseValue") or (g.get("generic") or {}).get("vo2MaxValue"),
-            "fitness_age": (g.get("generic") or {}).get("fitnessAge"),
-        }
-        for g in connect_range(client, "/metrics-service/metrics/maxmet/daily/{start}/{end}", start, TODAY, chunk_days=90)
-        if isinstance(g.get("generic"), dict)
-    ])
-
-    def readiness() -> list[dict]:
-        items = []
-        empty_streak = 0
-        for i in range(60):
-            if empty_streak >= 10:
-                break  # device does not provide training readiness
-            d = TODAY - timedelta(days=i)
-            raw = client.get_training_readiness(d.isoformat())
-            entry = raw[0] if isinstance(raw, list) and raw else raw if isinstance(raw, dict) else None
-            if not entry or entry.get("score") is None:
-                empty_streak += 1
-                continue
-            empty_streak = 0
-            items.append({
-                "date": entry.get("calendarDate") or d.isoformat(),
-                "score": entry.get("score"),
-                "level": entry.get("level"),
-                "sleep_score": entry.get("sleepScore"),
-                "hrv_factor": entry.get("hrvFactorPercent"),
-                "recovery_time_factor": entry.get("recoveryTimeFactorPercent"),
-                "acute_load": entry.get("acuteLoad"),
-                "stress_history_factor": entry.get("stressHistoryFactorPercent"),
-                "sleep_history_factor": entry.get("sleepHistoryFactorPercent"),
-            })
-        return items
-
-    daily["readiness"] = section("daily.readiness", readiness)
-
-    daily["intensity_minutes_weekly"] = section("daily.intensity_minutes_weekly", lambda: connect_range(
-        client, "/usersummary-service/stats/im/weekly/{start}/{end}", start, TODAY, chunk_days=364))
-
-    return daily
+            new += 1
+            # Preserve historical metrics absent from the new API, but use the
+            # current list as authority for names, new values and deletions.
+            prior = known.get(str(aid), {})
+            slim = {k: prior[k] for k in ACTIVITY_FIELDS if k in prior}
+            slim.update({k: raw[k] for k in ACTIVITY_FIELDS if raw.get(k) is not None})
+            slim["typeKey"] = (raw.get("activityType") or {}).get("typeKey")
+            slim["eventType"] = (
+                raw.get("eventType") or raw.get("eventTypeDTO") or {}
+            ).get("typeKey")
+            activities.append(slim)
+        if len(batch) < size:
+            break
+        if not new:
+            raise ValueError("Activity pagination made no progress")
+        offset += len(batch)
+    return sorted(activities, key=lambda a: a.get("startTimeLocal") or "", reverse=True)
 
 
-def export_sleep_detail(client: Garmin, nights: int = 14) -> list[dict]:
-    def fetch() -> list[dict]:
-        out = []
-        for i in range(nights):
-            d = TODAY - timedelta(days=i)
-            raw = client.get_sleep_data(d.isoformat())
-            dto = (raw or {}).get("dailySleepDTO") or {}
-            if not dto.get("sleepTimeSeconds"):
-                continue
-            out.append({
-                "date": dto.get("calendarDate") or d.isoformat(),
-                "score": ((dto.get("sleepScores") or {}).get("overall") or {}).get("value"),
-                "quality": ((dto.get("sleepScores") or {}).get("overall") or {}).get("qualifierKey"),
-                "total_s": dto.get("sleepTimeSeconds"),
-                "deep_s": dto.get("deepSleepSeconds"),
-                "light_s": dto.get("lightSleepSeconds"),
-                "rem_s": dto.get("remSleepSeconds"),
-                "awake_s": dto.get("awakeSleepSeconds"),
-                "start": dto.get("sleepStartTimestampLocal"),
-                "end": dto.get("sleepEndTimestampLocal"),
-                "avg_spo2": dto.get("averageSpO2Value"),
-                "avg_respiration": dto.get("averageRespirationValue"),
-                "resting_hr": (raw or {}).get("restingHeartRate"),
-                "body_battery_change": (raw or {}).get("bodyBatteryChange"),
-                "avg_overnight_hrv": (raw or {}).get("avgOvernightHrv"),
-            })
-        return out
-
-    return section("sleep_detail", fetch) or []
+def sleep_entry(dto: dict) -> dict:
+    score = (dto.get("sleepScores") or {}).get("overall") or {}
+    entry = {
+        "date": dto.get("calendarDate"),
+        "score": score.get("value"),
+        "quality": score.get("qualifierKey"),
+    }
+    for target, source in {
+        "total_s": "sleepTimeSeconds",
+        "deep_s": "deepSleepSeconds",
+        "light_s": "lightSleepSeconds",
+        "rem_s": "remSleepSeconds",
+        "awake_s": "awakeSleepSeconds",
+        "start": "sleepStartTimestampLocal",
+        "end": "sleepEndTimestampLocal",
+        "avg_spo2": "averageSpO2Value",
+        "avg_respiration": "averageRespirationValue",
+    }.items():
+        entry[target] = dto.get(source)
+    return entry
 
 
-def export_fitness(client: Garmin, start: date) -> dict:
-    fitness: dict[str, Any] = {}
-
-    fitness["training_status"] = section("fitness.training_status", lambda: client.get_training_status(TODAY.isoformat()))
-
-    fitness["race_predictions"] = section("fitness.race_predictions", client.get_race_predictions)
-
-    def race_history() -> list[dict]:
-        out = []
-        for c_start, c_end in chunked_dates(start, TODAY, 180):
-            raw = client.get_race_predictions(c_start.isoformat(), c_end.isoformat(), _type="daily")
-            if isinstance(raw, list):
-                out.extend(x for x in raw if isinstance(x, dict))
-            elif isinstance(raw, dict) and raw:
-                out.append(raw)
-        return out
-
-    fitness["race_predictions_history"] = section("fitness.race_predictions_history", race_history)
-
-    fitness["endurance_score"] = section("fitness.endurance_score", lambda: client.get_endurance_score(
-        start.isoformat(), TODAY.isoformat()))
-
-    fitness["hill_score"] = section("fitness.hill_score", lambda: client.get_hill_score(
-        start.isoformat(), TODAY.isoformat()))
-
-    fitness["fitness_age"] = section("fitness.fitness_age", lambda: client.get_fitnessage_data(TODAY.isoformat()))
-
-    fitness["hr_zones"] = section("fitness.hr_zones", lambda: client.connectapi("/biometric-service/heartRateZones"))
-
-    return fitness
-
-
-def export_body(client: Garmin) -> dict:
-    body: dict[str, Any] = {}
-    two_years = TODAY - timedelta(days=730)
-
-    def weigh_ins() -> list[dict]:
-        raw = client.get_body_composition(two_years.isoformat(), TODAY.isoformat()) or {}
-        out = []
-        for e in raw.get("dateWeightList") or []:
-            if not isinstance(e, dict):
-                continue
-            out.append({
-                "date": e.get("calendarDate"),
-                "weight_g": e.get("weight"),
-                "bmi": e.get("bmi"),
-                "body_fat_pct": e.get("bodyFat"),
-                "body_water_pct": e.get("bodyWater"),
-                "muscle_mass_g": e.get("muscleMass"),
-                "bone_mass_g": e.get("boneMass"),
-            })
-        out.sort(key=lambda x: x.get("date") or "")
-        return out
-
-    body["weigh_ins"] = section("body.weigh_ins", weigh_ins)
-    return body
-
-
-def export_records(client: Garmin) -> dict:
-    records: dict[str, Any] = {}
-
-    def prs() -> list[dict]:
-        raw = client.get_personal_record() or []
-        return [
+def weekly_intensity(rows: list[dict]) -> list[dict]:
+    weeks = {}
+    for row in rows:
+        minutes = row.get("intensityMinutes")
+        if not minutes or not row.get("calendarDate"):
+            continue
+        day = date.fromisoformat(row["calendarDate"])
+        week = (day - timedelta(days=day.weekday())).isoformat()
+        entry = weeks.setdefault(
+            week,
             {
-                "type_id": r.get("typeId"),
-                "activity_type": r.get("activityType"),
-                "value": r.get("value"),
-                "date": r.get("prStartTimeGmtFormatted") or r.get("prTypeLabelKey"),
-                "activity_id": r.get("activityId"),
-                "activity_name": r.get("activityName"),
-            }
-            for r in raw
-            if isinstance(r, dict)
+                "calendarDate": week,
+                "weeklyGoal": None,
+                "moderateValue": 0,
+                "vigorousValue": 0,
+            },
+        )
+        entry["weeklyGoal"] = minutes.get("goal")
+        entry["moderateValue"] += minutes.get("moderate") or 0
+        entry["vigorousValue"] += minutes.get("vigorous") or 0
+    return [weeks[key] for key in sorted(weeks)]
+
+
+def body_battery(rows: list[dict]) -> list[dict]:
+    result = []
+    for row in rows:
+        descriptors = row.get("bodyBatteryValueDescriptorDTOList") or []
+        index = next(
+            (
+                d["bodyBatteryValueDescriptorIndex"]
+                for d in descriptors
+                if d.get("bodyBatteryValueDescriptorKey") == "bodyBatteryLevel"
+            ),
+            1,
+        )
+        values = [
+            v[index]
+            for v in row.get("bodyBatteryValuesArray") or []
+            if len(v) > index
+            and isinstance(v[index], (int, float))
+            and 0 <= v[index] <= 100
         ]
-
-    records["personal_records"] = section("records.personal_records", prs)
-
-    def badges() -> list[dict]:
-        raw = client.get_earned_badges() or []
-        return [
+        result.append(
             {
-                "name": b.get("badgeName"),
-                "date": b.get("badgeEarnedDate"),
-                "points": b.get("badgePoints"),
-                "category": b.get("badgeCategoryId"),
+                "date": row.get("date"),
+                "charged": row.get("charged"),
+                "drained": row.get("drained"),
+                "highest": max(values) if values else None,
+                "lowest": min(values) if values else None,
             }
-            for b in raw
-            if isinstance(b, dict)
-        ]
-
-    records["badges"] = section("records.badges", badges)
-    return records
+        )
+    return result
 
 
-def export_gear(client: Garmin) -> list[dict]:
-    def fetch() -> list[dict]:
-        profile = client.get_user_profile() or {}
-        profile_id = profile.get("profileId") or (profile.get("userData") or {}).get("profileId")
-        if profile_id is None:
-            settings = client.connectapi("/userprofile-service/userprofile/user-settings") or {}
-            profile_id = settings.get("id")
-        raw = client.get_gear(profile_id) or []
-        out = []
-        for g in raw:
-            if not isinstance(g, dict):
-                continue
-            uuid = g.get("uuid")
-            stats = {}
-            if uuid:
-                try:
-                    stats = client.connectapi(f"/gear-service/gear/stats/{uuid}") or {}
-                except Exception:  # noqa: BLE001
-                    stats = {}
-            out.append({
-                "name": g.get("displayName") or g.get("customMakeModel"),
-                "type": g.get("gearTypeName"),
-                "status": g.get("gearStatusName"),
-                "distance_m": stats.get("totalDistance"),
-                "activities": stats.get("totalActivities"),
-                "max_distance_m": g.get("maximumMeters"),
-            })
-        return out
-
-    return section("gear", fetch) or []
-
-
-def export_goals(client: Garmin) -> list[dict]:
-    def fetch() -> list[dict]:
-        out = []
-        for status in ("active", "future"):
-            raw = client.get_goals(status) or []
-            for g in raw:
-                if isinstance(g, dict):
-                    g["_status"] = status
-                    out.append(g)
-        return out
-
-    return section("goals", fetch) or []
-
-
-def export_strength(client: Garmin, activities: list[dict]) -> list[dict]:
-    def fetch() -> list[dict]:
-        cutoff = (TODAY - timedelta(days=180)).isoformat()
-        strength_acts = [
-            a for a in activities
-            if a.get("typeKey") == "strength_training" and (a.get("startTimeLocal") or "") >= cutoff
-        ][:40]
-        out = []
-        for a in strength_acts:
-            aid = a.get("activityId")
-            try:
-                raw = client.get_activity_exercise_sets(aid) or {}
-            except Exception:  # noqa: BLE001
-                continue
-            sets = []
-            for s in raw.get("exerciseSets") or []:
-                if not isinstance(s, dict) or s.get("setType") != "ACTIVE":
+def weight_entries(client, start: date) -> list[dict]:
+    result = []
+    for first, last in chunked_dates(start, TODAY, 90):
+        raw = client.get_weight_measurements(first, last) or {}
+        for day in raw.get("dailyWeightSummaries") or []:
+            entries = day.get("allWeightMetrics") or [day.get("latestWeight")]
+            for entry in entries:
+                if not entry:
                     continue
-                exercises = s.get("exercises") or []
-                name = None
-                if exercises and isinstance(exercises[0], dict):
-                    name = exercises[0].get("name") or exercises[0].get("category")
-                sets.append({
-                    "exercise": name,
-                    "reps": s.get("repetitionCount"),
-                    "weight_g": s.get("weight"),
-                    "duration_s": s.get("duration"),
-                })
-            if sets:
-                out.append({"activity_id": aid, "date": (a.get("startTimeLocal") or "")[:10], "sets": sets})
-        return out
+                # The Personal API documents kilograms; the dashboard uses grams.
+                weight = entry.get("weight")
+                result.append(
+                    {
+                        "date": entry.get("calendarDate") or day.get("summaryDate"),
+                        "weight_g": weight * 1000 if weight is not None else None,
+                        "bmi": entry.get("bmi"),
+                        "body_fat_pct": entry.get("bodyFat"),
+                        "body_water_pct": entry.get("bodyWater"),
+                        "muscle_mass_g": entry.get("muscleMass"),
+                        "bone_mass_g": entry.get("boneMass"),
+                    }
+                )
+    return sorted(result, key=lambda row: row.get("date") or "")
 
-    return section("strength", fetch) or []
-
-
-def export_calendar(client: Garmin) -> list[dict]:
-    """Scheduled workouts / calendar items for this week (for today's recommendation)."""
-
-    def fetch() -> list[dict]:
-        items = []
-        for delta in (0, 1):
-            ref = TODAY + timedelta(days=7 * delta)
-            raw = client.connectapi(f"/calendar-service/year/{ref.year}/month/{ref.month - 1}") or {}
-            for item in raw.get("calendarItems") or []:
-                if not isinstance(item, dict):
-                    continue
-                if item.get("itemType") == "workout" and (item.get("date") or "") >= TODAY.isoformat():
-                    items.append({
-                        "date": item.get("date"),
-                        "title": item.get("title"),
-                        "workout_id": item.get("workoutId"),
-                        "sport": item.get("sportTypeKey"),
-                    })
-        seen = set()
-        unique = []
-        for i in items:
-            key = (i["date"], i.get("workout_id"))
-            if key not in seen:
-                seen.add(key)
-                unique.append(i)
-        return sorted(unique, key=lambda x: x["date"])
-
-    return section("calendar", fetch) or []
-
-
-# ---------------------------------------------------------------------------
-# Derived metrics (training load model)
-# ---------------------------------------------------------------------------
 
 def compute_load_trend(activities: list[dict], days: int) -> list[dict]:
     """CTL/ATL/TSB from per-activity training load (EWMA 42d / 7d)."""
@@ -562,67 +344,185 @@ def compute_load_trend(activities: list[dict], days: int) -> list[dict]:
         ctl += (load - ctl) * k_ctl
         atl += (load - atl) * k_atl
         if iso >= cutoff:
-            out.append({
-                "date": iso,
-                "load": round(load, 1),
-                "ctl": round(ctl, 1),
-                "atl": round(atl, 1),
-                "tsb": round(ctl - atl, 1),
-                "acwr": round(atl / ctl, 2) if ctl > 0 else None,
-            })
+            out.append(
+                {
+                    "date": iso,
+                    "load": round(load, 1),
+                    "ctl": round(ctl, 1),
+                    "atl": round(atl, 1),
+                    "tsb": round(ctl - atl, 1),
+                    "acwr": round(atl / ctl, 2) if ctl > 0 else None,
+                }
+            )
         d += timedelta(days=1)
     return out
 
 
-# ---------------------------------------------------------------------------
+def export(client, out: Path, days: int) -> dict:
+    exporter = Exporter(out)
+    start = TODAY - timedelta(days=days)
+    # Check authorization and the required activity feed before writing files.
+    settings = (
+        exporter.section(
+            "profile.settings", client.get_user_profile_settings, required=True
+        )
+        or {}
+    )
+    activities = exporter.section(
+        "activities",
+        lambda: fetch_activities(client, exporter.previous("activities") or []),
+        required=True,
+    )
+    profile = {
+        "full_name": settings.get("displayName"),
+        "unit_system": settings.get("measurementSystem"),
+        "user": exporter.unavailable("profile.user", {}),
+        "devices": exporter.unavailable("profile.devices", []),
+    }
+
+    @cache
+    def summaries():
+        return range_rows(client.get_daily_summaries, start, TODAY, 90, "data")
+
+    @cache
+    def sleep():
+        rows = range_rows(
+            client.get_daily_sleep_summaries,
+            max(start, TODAY - timedelta(days=149)),
+            TODAY,
+            31,
+        )
+        return [sleep_entry(row) for row in rows if row.get("sleepTimeSeconds")]
+
+    daily = {
+        "steps": exporter.section(
+            "daily.steps",
+            lambda: range_rows(client.get_daily_steps, start, TODAY, 28),
+            default=[],
+        ),
+        "stress": exporter.section(
+            "daily.stress",
+            lambda: range_rows(client.get_daily_stress, start, TODAY, 28),
+            default=[],
+        ),
+        "rhr": exporter.section(
+            "daily.rhr",
+            lambda: [
+                {
+                    "calendarDate": row.get("calendarDate"),
+                    "values": {"restingHR": row["heartRate"].get("restingValue")},
+                }
+                for row in summaries()
+                if row.get("heartRate")
+            ],
+            default=[],
+        ),
+        "sleep_scores": exporter.section("daily.sleep_scores", sleep, default=[]),
+        "hrv": exporter.section(
+            "daily.hrv",
+            lambda: [
+                {
+                    "date": row.get("calendarDate"),
+                    "avg": row.get("lastNightAvg"),
+                    "status": row.get("status"),
+                    "weekly_avg": row.get("weeklyAvg"),
+                    "baseline": row.get("baseline"),
+                }
+                for row in range_rows(
+                    client.get_daily_hrv_summaries, start, TODAY, 90, "hrvSummaries"
+                )
+            ],
+            default=[],
+        ),
+        "body_battery": exporter.section(
+            "daily.body_battery",
+            lambda: body_battery(
+                range_rows(client.get_daily_body_battery, start, TODAY, 31)
+            ),
+            default=[],
+        ),
+        "intensity_minutes_weekly": exporter.section(
+            "daily.intensity_minutes_weekly",
+            lambda: weekly_intensity(summaries()),
+            default=[],
+        ),
+        "vo2max": exporter.unavailable("daily.vo2max", []),
+        "readiness": exporter.unavailable("daily.readiness", []),
+    }
+    fitness = {
+        key: exporter.unavailable(f"fitness.{key}")
+        for key in (
+            "training_status",
+            "race_predictions",
+            "race_predictions_history",
+            "endurance_score",
+            "hill_score",
+        )
+    }
+    fitness["fitness_age"] = exporter.section(
+        "fitness.fitness_age", lambda: client.get_fitness_age(TODAY)
+    )
+    fitness["hr_zones"] = exporter.section(
+        "fitness.hr_zones", client.get_heart_rate_zones, default=[]
+    )
+    body = {
+        "weigh_ins": exporter.section(
+            "body.weigh_ins",
+            lambda: weight_entries(client, TODAY - timedelta(days=730)),
+            default=[],
+        )
+    }
+    files = {
+        "profile": profile,
+        "activities": activities,
+        "daily": daily,
+        "fitness": fitness,
+        "body": body,
+        "sleep_detail": exporter.section(
+            "sleep_detail",
+            lambda: [
+                row
+                for row in sleep()
+                if (row.get("date") or "") >= (TODAY - timedelta(days=13)).isoformat()
+            ],
+            default=[],
+        ),
+        "records": exporter.unavailable("records"),
+        "gear": exporter.unavailable("gear"),
+        "goals": exporter.unavailable("goals"),
+        "calendar": exporter.unavailable("calendar"),
+        # Strength sets are populated by the official FIT detail exporter.
+        "load_trend": exporter.section(
+            "load_trend", lambda: compute_load_trend(activities, days)
+        ),
+    }
+    out.mkdir(parents=True, exist_ok=True)
+    for name, value in files.items():
+        write_json(out, name, value)
+    write_json(out, "manifest", exporter.manifest)
+    return exporter.manifest
+
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--days", type=int, default=400, help="History window for daily series")
-    parser.add_argument("--out", default="docs/data", help="Output directory")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--days", type=int, default=400)
+    parser.add_argument("--out", default="docs/data")
     args = parser.parse_args()
-
-    out_dir = Path(args.out)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    start = TODAY - timedelta(days=args.days)
-
-    token_dir = os.environ.get("GARMINTOKENS", str(Path.home() / ".garminconnect"))
-    log(f"Logging in with token store {token_dir} ...")
-    client = Garmin()
-    client.login(token_dir)
-    log("Login OK")
-
-    profile = export_profile(client)
-    activities = export_activities(client)
-    daily = export_daily(client, start)
-    sleep_detail = export_sleep_detail(client)
-    fitness = export_fitness(client, start)
-    body = export_body(client)
-    records = export_records(client)
-    gear = export_gear(client)
-    goals = export_goals(client)
-    strength = export_strength(client, activities)
-    calendar = export_calendar(client)
-    load_trend = section("load_trend", lambda: compute_load_trend(activities, args.days))
-
-    write_json(out_dir, "profile", profile)
-    write_json(out_dir, "activities", activities)
-    write_json(out_dir, "daily", daily)
-    write_json(out_dir, "sleep_detail", sleep_detail)
-    write_json(out_dir, "fitness", fitness)
-    write_json(out_dir, "body", body)
-    write_json(out_dir, "records", records)
-    write_json(out_dir, "gear", gear)
-    write_json(out_dir, "goals", goals)
-    write_json(out_dir, "strength", strength)
-    write_json(out_dir, "calendar", calendar)
-    write_json(out_dir, "load_trend", load_trend)
-    write_json(out_dir, "manifest", manifest)
-
-    failed = [k for k, v in manifest["sections"].items() if not v.get("ok")]
-    log(f"\nDone. {len(manifest['sections']) - len(failed)} sections OK, {len(failed)} failed.")
-    if failed:
-        log("Failed sections (non-fatal): " + ", ".join(failed))
+    if args.days < 1:
+        parser.error("--days muss positiv sein")
+    try:
+        with create_client() as client:
+            manifest = export(client, Path(args.out), args.days)
+    except Exception as exc:  # noqa: BLE001 - sanitize provider errors at the CLI boundary
+        log(f"Export fehlgeschlagen: {error_message(exc)}")
+        return 1
+    failed = sum(
+        not item["ok"] and item.get("status") != "unavailable"
+        for item in manifest["sections"].values()
+    )
+    log(
+        f"Export über die Garmin Personal API abgeschlossen. {failed} optionale Bereiche fehlgeschlagen."
+    )
     return 0
 
 

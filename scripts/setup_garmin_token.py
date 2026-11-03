@@ -1,69 +1,67 @@
 # /// script
-# requires-python = ">=3.11"
-# dependencies = ["garminconnect>=0.3.5"]
+# requires-python = ">=3.12"
+# dependencies = ["garmin-connect-personal-api-python==1.0.0"]
 # ///
-"""
-setup_garmin_token.py — erzeugt den Garmin-Token für das Secret GARMIN_TOKENS_JSON.
+"""Validate an official Garmin Personal API key and optionally save it locally.
 
-Läuft LOKAL auf deinem eigenen Rechner. Dein Garmin-Passwort verlässt dein
-Gerät NICHT — es wird nur einmal an Garmin geschickt, um einen Token zu holen.
-Ausgegeben wird ausschließlich der Token (nicht das Passwort); den trägst du
-danach als GitHub-Secret in deinem Fork ein.
-
-Aufruf:
     uv run scripts/setup_garmin_token.py
-(oder:  pip install "garminconnect>=0.3.5"  &&  python scripts/setup_garmin_token.py )
+    uv run scripts/setup_garmin_token.py --check
+
+Create the key at https://connect.garmin.com/app/settings/personalApiToken.
+For GitHub Actions, store that key directly as GARMIN_PERSONAL_API_KEY.
+The historical script name is retained; no password/MFA login is performed.
 """
 
-from __future__ import annotations
-
+import argparse
 import getpass
 import os
 import sys
 from pathlib import Path
 
-from garminconnect import Garmin
-
-STORE = Path(os.path.expanduser("~/.garminconnect"))
-TOKEN_FILE = STORE / "garmin_tokens.json"
+from garmin_api import create_client, error_message
 
 
 def main() -> int:
-    print("Garmin-Login (nur zum Token-Holen; Passwort bleibt lokal)\n")
-    email = input("Garmin E-Mail: ").strip()
-    password = getpass.getpass("Garmin Passwort: ")
-
-    # prompt_mfa wird nur aufgerufen, wenn dein Konto Zwei-Faktor an hat.
-    def prompt_mfa() -> str:
-        return input("MFA-Code aus deiner Authenticator-App / SMS: ").strip()
-
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--check", action="store_true", help="Vorhandenen Schlüssel nur prüfen"
+    )
+    parser.add_argument(
+        "--key-file",
+        type=Path,
+        default=Path.home() / ".config/garmin/connect-personal-api-key",
+    )
+    args = parser.parse_args()
+    key = None
+    if not args.check:
+        print(
+            "Offiziellen Schlüssel in Garmin Connect erstellen:\nhttps://connect.garmin.com/app/settings/personalApiToken"
+        )
+        key = (
+            os.environ.get("GARMIN_PERSONAL_API_KEY")
+            or getpass.getpass("Personal API Key (wird nicht angezeigt): ").strip()
+        )
+        if not key:
+            print("Kein API-Schlüssel angegeben.", file=sys.stderr)
+            return 1
+    elif args.key_file.exists() and "GARMIN_PERSONAL_API_KEY" not in os.environ:
+        key = args.key_file.read_text(encoding="utf-8").strip()
     try:
-        try:
-            client = Garmin(email=email, password=password, prompt_mfa=prompt_mfa)
-        except TypeError:
-            # Ältere garminconnect-Versionen kennen prompt_mfa nicht.
-            client = Garmin(email, password)
-        client.login()
-    except Exception as exc:  # noqa: BLE001
-        print(f"\nLogin fehlgeschlagen: {type(exc).__name__}: {exc}", file=sys.stderr)
-        print("Bei aktivem Zwei-Faktor: garminconnect aktuell halten (uv holt das automatisch).", file=sys.stderr)
+        with create_client(key) as client:
+            client.get_user_profile_settings()
+        if key and not args.check:
+            args.key_file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            fd = os.open(args.key_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                stream.write(key + "\n")
+            args.key_file.chmod(0o600)
+            print(f"API-Schlüssel lokal in {args.key_file} gespeichert.")
+    except Exception as exc:  # noqa: BLE001 - sanitize provider errors at the CLI boundary
+        print(error_message(exc), file=sys.stderr)
         return 1
-
-    STORE.mkdir(parents=True, exist_ok=True)
-    client.garth.dump(str(STORE))
-
-    if not TOKEN_FILE.exists():
-        print(f"\nUnerwartet: {TOKEN_FILE} wurde nicht angelegt.", file=sys.stderr)
-        print("Inhalt des Token-Ordners:", [p.name for p in STORE.glob("*")], file=sys.stderr)
-        return 1
-
-    print("\nLogin OK. Kopiere ALLES zwischen den beiden Linien in das GitHub-Secret")
-    print("GARMIN_TOKENS_JSON (Repo → Settings → Secrets and variables → Actions):\n")
-    print("----------------------------------------------------------------------")
-    print(TOKEN_FILE.read_text(encoding="utf-8").strip())
-    print("----------------------------------------------------------------------")
-    print("\nDer Token ist gültig, bis du dich bei Garmin abmeldest oder das")
-    print("Passwort änderst. Danach dieses Skript einfach erneut ausführen.")
+    print(
+        "Garmin Personal API erreichbar. Für Actions den Schlüssel als Secret GARMIN_PERSONAL_API_KEY hinterlegen."
+    )
     return 0
 
 

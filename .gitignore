@@ -24,3 +24,9 @@ app/public/data/
 # Lokale Strava-Sync-Zugangsdaten und Logs (enthalten Secrets)
 strava-sync-local/
 namen_sync.log
+
+# Lokale API-Schlüssel und unverschlüsselte Garmin-Bearer-Tokens
+/.api-state/
+config.json
+connect-personal-api-key
+connect-personal-api-bearer-token.json
