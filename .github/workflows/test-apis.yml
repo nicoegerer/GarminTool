@@ -47,3 +47,19 @@ jobs:
       - name: Frontend-Typen prüfen
         working-directory: app
         run: npm run typecheck
+      - name: Produktionsbuild für Browser-Regressionstests
+        working-directory: app
+        env:
+          NEXT_PUBLIC_GEMINI_KEY: browser-test-placeholder
+        run: npm run build
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Testbrowser installieren
+        run: uv run --with playwright==1.62.0 playwright install --with-deps chromium
+      - name: Oberfläche und Coach-Fehlerfälle prüfen
+        run: |
+          python -m http.server 4173 --bind 127.0.0.1 --directory app/out > /tmp/dashboard-test-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          uv run tests/check_dashboard.py --url http://127.0.0.1:4173 --mock-coach

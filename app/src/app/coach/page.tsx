@@ -224,7 +224,11 @@ function ChatBox({ cfg }: { cfg: ProviderConfig }) {
   const [busy, setBusy] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [msgs]);
+  useEffect(() => {
+    // New browsers can return a Promise here; an effect must not return it
+    // as a cleanup callback when the next message arrives.
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [msgs]);
   useEffect(() => {
     coachSession.chat = msgs;
   }, [msgs]);

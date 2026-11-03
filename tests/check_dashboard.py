@@ -9,6 +9,8 @@
 
 --coach sends one short test prompt using the deployed coach configuration.
 --refresh starts one real refresh using the website's configured button.
+--mock-coach intercepts Google requests to check replies, errors and recovery
+against a production build configured with a placeholder key.
 No API keys, request headers, training details or prompts are printed.
 """
 
@@ -40,6 +42,11 @@ def main():
     parser.add_argument("--url", required=True)
     parser.add_argument("--browser", help="Optional local Chromium executable")
     parser.add_argument("--coach", action="store_true")
+    parser.add_argument(
+        "--mock-coach",
+        action="store_true",
+        help="Test replies and failures without calling Google",
+    )
     parser.add_argument("--refresh", action="store_true")
     args = parser.parse_args()
     base = args.url.rstrip("/")
@@ -56,9 +63,54 @@ def main():
             locale="de-DE",
             timezone_id="Europe/Berlin",
         )
+        mock_status = {"code": 200}
+        if args.mock_coach:
+
+            def mock_google(route):
+                status = mock_status["code"]
+                body = (
+                    "data: "
+                    + json.dumps(
+                        {
+                            "candidates": [
+                                {
+                                    "content": {
+                                        "parts": [
+                                            {"text": "Funktionstest erfolgreich."}
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    )
+                    + "\n\n"
+                )
+                route.fulfill(
+                    status=status,
+                    content_type="text/event-stream"
+                    if status == 200
+                    else "application/json",
+                    headers={
+                        "access-control-allow-origin": "*",
+                        "access-control-allow-headers": "*",
+                        "access-control-allow-methods": "POST, OPTIONS",
+                    },
+                    body=body
+                    if status == 200
+                    else '{"error":{"message":"Test service unavailable"}}',
+                )
+
+            context.route("https://generativelanguage.googleapis.com/**", mock_google)
         page = context.new_page()
         errors = []
-        page.on("pageerror", lambda error: errors.append(type(error).__name__))
+        page.on(
+            "pageerror",
+            lambda error: errors.append(
+                re.sub(r"(https?://[^?\s]+)\?[^\s]+", r"\1?[redacted]", str(error))[
+                    :800
+                ]
+            ),
+        )
         report = {
             "routes": [],
             "activity_details": [],
@@ -163,7 +215,7 @@ def main():
                 else None
             ),
         )
-        if args.coach:
+        if args.coach or args.mock_coach:
             try:
                 page.goto(base + "/coach/", wait_until="networkidle")
                 assert page.get_by_role(
@@ -180,6 +232,27 @@ def main():
                     timeout=90000,
                 )
                 report["coach"] = "response_received"
+                if args.mock_coach:
+                    mock_status["code"] = 503
+                    page.get_by_placeholder("Warum keine harte Einheit heute?").fill(
+                        "Prüfe den Fehlerfall."
+                    )
+                    page.get_by_role("button", name="Senden", exact=True).click()
+                    page.wait_for_function(
+                        "() => [...document.querySelectorAll('div.rounded-bl-md')].at(-1)?.textContent.includes('Gemini antwortete mit 503')",
+                        timeout=15000,
+                    )
+                    assert not errors, "Coach crashed when its service was unavailable"
+                    mock_status["code"] = 200
+                    page.get_by_placeholder("Warum keine harte Einheit heute?").fill(
+                        "Prüfe die Wiederherstellung."
+                    )
+                    page.get_by_role("button", name="Senden", exact=True).click()
+                    page.wait_for_function(
+                        "() => [...document.querySelectorAll('div.rounded-bl-md')].at(-1)?.textContent.includes('Funktionstest erfolgreich')",
+                        timeout=15000,
+                    )
+                    report["mock_coach_error_and_recovery"] = True
             except (AssertionError, BrowserError):
                 report["coach"] = "failed"
                 failures.append("coach")
@@ -206,10 +279,11 @@ def main():
                 report["refresh"] = "failed"
                 failures.append("refresh")
 
-        assert not errors, "JavaScript errors occurred"
+        report["javascript_errors"] = errors
         report["service_statuses"] = service_statuses
         print(json.dumps(report, ensure_ascii=False, indent=2))
         browser.close()
+        assert not errors, "JavaScript errors occurred"
         assert not failures, f"Optional checks failed: {', '.join(failures)}"
 
 
