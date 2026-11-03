@@ -10,6 +10,7 @@ import { cn } from "@/lib/format";
 import { useTheme } from "./theme";
 import { RefreshButton } from "./refresh-button";
 import { Background } from "./background";
+import { DataAvailability } from "./data-availability";
 import { useEffect, useState, type ReactNode } from "react";
 
 function isActive(pathname: string, href: string) {
@@ -294,6 +295,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
 
         <main className="mx-auto min-h-screen w-full max-w-6xl px-4 pb-24 pt-4 lg:px-8 lg:pb-16 lg:pt-0">
+          <DataAvailability />
           {/*
             Enter-only page transition, keyed by route: remounting on `key`
             replays the fade-in. No <AnimatePresence> — it doesn't unmount its

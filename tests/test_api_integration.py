@@ -48,6 +48,7 @@ class OfficialTransport:
         self.calls = []
         self.fail = None
         self.weight = 72.5
+        self.display_name = "Test Athlete"
 
     def get(self, url, *, headers, params, timeout):
         self.calls.append((url, params))
@@ -64,7 +65,7 @@ class OfficialTransport:
             )
         if path == "/userprofile-service/userprofile/settings":
             return response(
-                {"displayName": "Test Athlete", "measurementSystem": "metric"}
+                {"displayName": self.display_name, "measurementSystem": "metric"}
             )
         if path == "/activitylist-service/activities/search/activities":
             assert params == {"start": 0, "limit": 100}
@@ -273,6 +274,33 @@ class ExportTests(unittest.TestCase):
         self.transport.weight = 72500
         export_data.export(self.client, self.out, 2)
         self.assertEqual(self.read("body")["weigh_ins"][0]["weight_g"], 72500)
+
+    def test_account_ids_and_empty_names_do_not_replace_the_saved_name(self):
+        with patch.dict("os.environ", {"DASHBOARD_DISPLAY_NAME": ""}):
+            for value in ("11111111-2222-4333-8444-555555555555", "", "  ", None):
+                with self.subTest(display_name=value):
+                    self.transport.display_name = value
+                    export_data.write_json(self.out, "profile", {"full_name": "Nico"})
+                    manifest = export_data.export(self.client, self.out, 2)
+                    self.assertEqual(self.read("profile")["full_name"], "Nico")
+                    self.assertEqual(
+                        manifest["sections"]["profile.full_name"]["source"], "retained"
+                    )
+
+    def test_configured_display_name_overrides_api_and_saved_names(self):
+        export_data.write_json(self.out, "profile", {"full_name": "Nico"})
+        with patch.dict("os.environ", {"DASHBOARD_DISPLAY_NAME": "  Ada  "}):
+            export_data.export(self.client, self.out, 2)
+        self.assertEqual(self.read("profile")["full_name"], "Ada")
+
+    def test_fresh_export_does_not_publish_account_id_as_name(self):
+        self.transport.display_name = "11111111-2222-4333-8444-555555555555"
+        with patch.dict("os.environ", {"DASHBOARD_DISPLAY_NAME": ""}):
+            manifest = export_data.export(self.client, self.out, 2)
+        self.assertIsNone(self.read("profile")["full_name"])
+        self.assertEqual(
+            manifest["sections"]["profile.full_name"]["status"], "unavailable"
+        )
 
     def test_required_failure_does_not_publish_partial_export(self):
         export_data.write_json(self.out, "activities", [{"activityId": 55}])

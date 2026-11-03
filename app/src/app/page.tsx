@@ -13,6 +13,7 @@ import { themeToken } from "@/lib/theme-tokens";
 import { fmtDur, fmtKm, fmtLag, fmtNum, fmtSleepNight, fmtTime, median } from "@/lib/format";
 import { SPORT_META, typeLabel } from "@/lib/sports";
 import type { Activity } from "@/lib/types";
+import { athleteName } from "@/lib/profile";
 
 type SheetId = "form" | "ctl" | "vo2" | "race" | "streak" | "week" | "rhr" | "sleep";
 
@@ -42,12 +43,13 @@ function Dashboard() {
   const sleepLast = (data.daily.sleep_scores ?? []).at(-1);
   const race = data.fitness.race_predictions;
   const recent = data.activities.slice(0, 4);
+  const name = athleteName(data.profile);
 
   return (
     <>
       <PageHeader
         kicker={new Date(data.today).toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" })}
-        title={`${greeting}, ${data.profile?.full_name ?? "Nico"}.`}
+        title={`${greeting}${name ? `, ${name}` : ""}.`}
         sub={
           data.manifest
             ? `Datenstand ${new Date(data.manifest.generated_at).toLocaleString("de-DE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} Uhr`

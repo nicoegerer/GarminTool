@@ -42,6 +42,7 @@ jobs:
         if: steps.check.outputs.skip == 'false'
         env:
           GARMIN_PERSONAL_API_KEY: ${{ secrets.GARMIN_PERSONAL_API_KEY }}
+          DASHBOARD_DISPLAY_NAME: ${{ vars.DASHBOARD_DISPLAY_NAME }}
         run: uv run scripts/export_data.py
 
       - name: Aktivitätsdetails über Personal API und FIT exportieren

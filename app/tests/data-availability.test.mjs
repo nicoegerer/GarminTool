@@ -1,0 +1,17 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { historicalDataLabels } from "../src/lib/data-availability.ts";
+
+test("only retained unavailable measurements are labelled historical", () => {
+  assert.deepEqual(historicalDataLabels({ sections: {
+    "daily.vo2max": { ok: false, status: "unavailable", retained: true },
+    "fitness.training_status": { ok: true },
+    "fitness.race_predictions": { ok: false, status: "unavailable", retained: false },
+    "records": { ok: false, status: "unavailable", retained: true },
+  } }), ["VO₂max", "Rekorde"]);
+});
+
+test("new installations and live supported exports do not show a history notice", () => {
+  assert.deepEqual(historicalDataLabels(null), []);
+  assert.deepEqual(historicalDataLabels({ sections: { "daily.steps": { ok: true } } }), []);
+});
