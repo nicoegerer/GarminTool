@@ -266,7 +266,7 @@ export interface PersonalRecord {
 }
 
 export interface Profile {
-  full_name?: string;
+  full_name?: string | null;
   unit_system?: string;
   user?: {
     gender?: string;
@@ -281,7 +281,7 @@ export interface Profile {
 
 export interface Manifest {
   generated_at: string;
-  sections: Record<string, { ok: boolean; count?: number; error?: string }>;
+  sections: Record<string, { ok: boolean; count?: number; error?: string; status?: string; retained?: boolean; source?: string }>;
 }
 
 /** Everything the client loads on boot. */

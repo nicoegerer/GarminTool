@@ -1,0 +1,50 @@
+name: Dashboard im Browser prüfen
+
+on:
+  workflow_dispatch:
+    inputs:
+      check_coach:
+        description: Einen kurzen echten KI-Coach-Aufruf prüfen
+        type: boolean
+        default: false
+      trigger_refresh:
+        description: Einmal den echten Aktualisieren-Button betätigen
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  browser-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Browser installieren
+        run: uv run --with playwright==1.62.0 playwright install --with-deps chromium
+      - name: Seitenadresse bestimmen
+        id: site
+        run: |
+          if [ -f app/public/CNAME ]; then
+            domain=$(tr -d '\r\n' < app/public/CNAME)
+            echo "url=https://$domain" >> "$GITHUB_OUTPUT"
+          else
+            echo "url=https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Navigation, Details, Suche und optional Coach/Refresh prüfen
+        env:
+          SITE_URL: ${{ steps.site.outputs.url }}
+          CHECK_COACH: ${{ inputs.check_coach }}
+          TRIGGER_REFRESH: ${{ inputs.trigger_refresh }}
+        run: |
+          check_args=(--url "$SITE_URL")
+          if [ "$CHECK_COACH" = "true" ]; then
+            check_args+=(--coach)
+          fi
+          if [ "$TRIGGER_REFRESH" = "true" ]; then
+            check_args+=(--refresh)
+          fi
+          uv run tests/check_dashboard.py "${check_args[@]}"

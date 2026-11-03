@@ -16,12 +16,14 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from functools import cache
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from garmin_api import authentication_failed, create_client, error_message
 
@@ -363,6 +365,30 @@ def compute_load_trend(activities: list[dict], days: int) -> list[dict]:
     return out
 
 
+def readable_name(value: Any) -> str | None:
+    """Garmin's displayName may be an account UUID rather than a person's name."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    name = value.strip()
+    try:
+        UUID(name)
+    except ValueError:
+        return name
+    return None
+
+
+def profile_name(settings: dict, previous: dict) -> tuple[str | None, str]:
+    for value, source in (
+        (os.environ.get("DASHBOARD_DISPLAY_NAME"), "configured"),
+        (settings.get("displayName"), "api"),
+        (previous.get("full_name"), "retained"),
+    ):
+        name = readable_name(value)
+        if name:
+            return name, source
+    return None, "unavailable"
+
+
 def export(client, out: Path, days: int) -> dict:
     exporter = Exporter(out)
     start = TODAY - timedelta(days=days)
@@ -378,8 +404,19 @@ def export(client, out: Path, days: int) -> dict:
         lambda: fetch_activities(client, exporter.previous("activities") or []),
         required=True,
     )
+    name, name_source = profile_name(settings, exporter.previous("profile") or {})
+    exporter.manifest["sections"]["profile.full_name"] = {
+        "ok": name is not None,
+        "count": int(name is not None),
+        "source": name_source,
+        **(
+            {"status": "unavailable", "error": "Kein lesbarer Profilname verfügbar."}
+            if name is None
+            else {}
+        ),
+    }
     profile = {
-        "full_name": settings.get("displayName"),
+        "full_name": name,
         "unit_system": settings.get("measurementSystem"),
         "user": exporter.unavailable("profile.user", {}),
         "devices": exporter.unavailable("profile.devices", []),

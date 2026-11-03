@@ -2,6 +2,7 @@ import type { Activity, GarminData } from "../types";
 import { fmtDur, fmtKm, fmtPace, fmtTime, lagDays, median, paceFromSpeed } from "../format";
 import { typeLabel } from "../sports";
 import type { UserPrefs } from "../prefs";
+import { athleteName } from "../profile";
 
 /**
  * Turns the Garmin export into the block of facts every AI call is grounded in.
@@ -13,8 +14,17 @@ import type { UserPrefs } from "../prefs";
 export function buildContext(data: GarminData, prefs: UserPrefs): string {
   const { profile, activities, daily, fitness, records, loadTrend, today } = data;
   const last = loadTrend.at(-1);
-  const name = profile?.full_name ?? "Nico";
+  const name = athleteName(profile) ?? "Athlet";
   const out: string[] = [];
+
+  const historical = Object.entries(data.manifest?.sections ?? {})
+    .filter(([, section]) => section.status === "unavailable" && section.retained)
+    .map(([section]) => section);
+  if (historical.length) {
+    out.push(`DATENSTAND: ${historical.join(", ")} stammen aus früheren Exporten. ` +
+      "Diese Bereiche werden von der Garmin Personal API derzeit nicht aktualisiert. " +
+      "Bezeichne sie nicht als aktuelle Messungen und berücksichtige vorhandene Datumsangaben.");
+  }
 
   /* --- Athlet --- */
   const vo2Series = (daily.vo2max ?? []).filter((v) => v.vo2max != null);

@@ -105,6 +105,19 @@ uv run scripts/export_details.py
 Referenzen: [Garmin Personal API](https://developer.garmin.com/gc-developer-program/personal/personal-api/),
 [offizielles Python-SDK](https://github.com/garmin/connect-personal-api-python).
 
+### Anzeigename
+
+Die Personal API kann in `displayName` eine technische Konto-ID zurückgeben.
+Der Export verwendet solche IDs nicht als Namen und behält einen zuvor
+gespeicherten lesbaren Namen bei. Falls für eine neue Installation kein Name
+verfügbar ist, bleibt die Begrüßung neutral.
+
+Ein eigener Anzeigename lässt sich unter **Settings → Secrets and variables →
+Actions → Variables** als `DASHBOARD_DISPLAY_NAME` setzen. Das ist eine normale
+Variable, kein zusätzliches Secret und kein API-Key. Sie hat Vorrang vor den
+Profilangaben und wird beim nächsten Refresh übernommen. Lokal unterstützt der
+Export dieselbe Umgebungsvariable.
+
 ## 3. Strava-Namen im Dashboard (optional)
 
 1. Unter [strava.com/settings/api](https://www.strava.com/settings/api) eine App
@@ -162,6 +175,9 @@ Endurance-/Hill-Score, Geräteprofil, Rekorde/Badges, Ausrüstung und
 Kalender-Workouts haben derzeit keine entsprechenden Personal-API-Endpunkte.
 Vorhandene Exporte bleiben erhalten; `manifest.json` kennzeichnet diese Bereiche
 mit `status: unavailable` und `retained`. Neue Werte werden dafür nicht behauptet.
+Die Seite zeigt bei gespeicherten VO₂max-, Trainingsstatus-, Prognose- oder
+Rekorddaten einen entsprechenden Hinweis. Auch der KI-Coach erhält diese
+Einschränkung, damit er historische Angaben nicht als neue Messungen behandelt.
 Optionale Abfragefehler behalten ebenfalls den letzten verfügbaren Stand.
 Fehler bei Authentifizierung oder Aktivitätsliste brechen den Export ab.
 
