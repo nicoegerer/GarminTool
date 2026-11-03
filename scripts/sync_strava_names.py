@@ -4,8 +4,8 @@
 # ///
 """Use official Strava OAuth to apply activity names to the local dashboard.
 
-    uv run scripts/namen_sync.py --setup
-    uv run scripts/namen_sync.py --execute [--out docs/data]
+    uv run scripts/sync_strava_names.py --setup
+    uv run scripts/sync_strava_names.py --execute [--out docs/data]
 
 Garmin's Personal API is read-only. This script updates exported JSON and never
 writes to Garmin Connect. STRAVA_CONFIG_JSON remains compatible with old setups.

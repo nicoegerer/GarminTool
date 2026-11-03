@@ -34,7 +34,7 @@ def load_config(path: Path = DEFAULT_CONFIG) -> dict:
     if not raw:
         if not path.exists():
             raise StravaError(
-                "Strava-Konfiguration fehlt. Zuerst namen_sync.py --setup ausführen."
+                "Strava-Konfiguration fehlt. Zuerst sync_strava_names.py --setup ausführen."
             )
         raw = path.read_text(encoding="utf-8")
     try:
@@ -135,7 +135,7 @@ class StravaClient:
         )
         if not refresh:
             raise StravaError(
-                "Strava Refresh-Token fehlt. Zuerst namen_sync.py --setup ausführen."
+                "Strava Refresh-Token fehlt. Zuerst sync_strava_names.py --setup ausführen."
             )
         token = post_token(
             self.config, grant_type="refresh_token", refresh_token=refresh

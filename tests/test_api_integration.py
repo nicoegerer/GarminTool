@@ -22,8 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import export_data
 import export_details
 import fit_details
-import namen_sync
 import strava_api
+import sync_strava_names
 from garmin_fit_sdk import Encoder, Profile
 from garmin_personal_api import GarminPersonalApiClient
 from garmin_personal_api.errors import HttpError
@@ -554,12 +554,14 @@ class StravaTests(unittest.TestCase):
                 "start_date_local": "2026-11-03T09:00:00Z",
             },
         ]
-        changes = namen_sync.apply_names(activities, source, datetime(2026, 11, 2), 600)
+        changes = sync_strava_names.apply_names(
+            activities, source, datetime(2026, 11, 2), 600
+        )
         self.assertEqual(changes, {1: "Intervals"})
         self.assertEqual(
             activities[0]["activityName"], "Run"
         )  # Preview does not mutate.
-        all_names = namen_sync.apply_names(
+        all_names = sync_strava_names.apply_names(
             activities, source, datetime(2026, 11, 2), 600, True
         )
         self.assertEqual(all_names[2], "Morning Ride")
@@ -590,13 +592,14 @@ class StravaTests(unittest.TestCase):
         ]
         with (
             patch.object(
-                sys, "argv", ["namen_sync.py", "--out", str(out), "--execute"]
+                sys, "argv", ["sync_strava_names.py", "--out", str(out), "--execute"]
             ),
-            patch.object(strava_api, "load_config", return_value=self.config),
-            patch.object(namen_sync, "load_config", return_value=self.config),
-            patch.object(namen_sync.StravaClient, "activities", return_value=source),
+            patch.object(sync_strava_names, "load_config", return_value=self.config),
+            patch.object(
+                sync_strava_names.StravaClient, "activities", return_value=source
+            ),
         ):
-            self.assertEqual(namen_sync.main(), 0)
+            self.assertEqual(sync_strava_names.main(), 0)
         self.assertEqual(
             json.loads((out / "activities.json").read_text())[0]["activityName"],
             "Intervals",
@@ -633,7 +636,7 @@ class StravaTests(unittest.TestCase):
 
         class Server:
             def __init__(server, address, handler):
-                self.assertEqual(address, ("127.0.0.1", namen_sync.PORT))
+                self.assertEqual(address, ("127.0.0.1", sync_strava_names.PORT))
                 server.handler = handler
                 server.count = 0
 
@@ -671,12 +674,14 @@ class StravaTests(unittest.TestCase):
         }
         with (
             patch.dict("os.environ", {"STRAVA_STATE_DIR": str(self.state / "tokens")}),
-            patch.object(namen_sync.http.server, "HTTPServer", Server),
-            patch.object(namen_sync.webbrowser, "open", side_effect=opened.append),
-            patch.object(namen_sync, "post_token", return_value=token) as post,
+            patch.object(sync_strava_names.http.server, "HTTPServer", Server),
+            patch.object(
+                sync_strava_names.webbrowser, "open", side_effect=opened.append
+            ),
+            patch.object(sync_strava_names, "post_token", return_value=token) as post,
             redirect_stdout(io.StringIO()),
         ):
-            namen_sync.setup(config_path)
+            sync_strava_names.setup(config_path)
         return config_path, rejected, post
 
     def test_oauth_rejects_wrong_state_and_persists_valid_grant_privately(self):
