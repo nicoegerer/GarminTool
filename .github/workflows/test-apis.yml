@@ -1,0 +1,28 @@
+name: Offizielle API-Anbindungen testen
+
+on:
+  push:
+    paths:
+      - "scripts/**"
+      - "tests/**"
+      - ".github/workflows/test-apis.yml"
+      - ".github/workflows/refresh-data.yml"
+  pull_request:
+    paths:
+      - "scripts/**"
+      - "tests/**"
+      - ".github/workflows/test-apis.yml"
+      - ".github/workflows/refresh-data.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  api-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv run tests/test_api_integration.py

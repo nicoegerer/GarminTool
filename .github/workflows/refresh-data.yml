@@ -8,20 +8,26 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: garmin-refresh
+  cancel-in-progress: false
+
 jobs:
   refresh:
+    # Der rotierende Strava-Tokenstatus hat genau eine maßgebliche Branch.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Token-Secret prüfen
+      - name: Personal-API-Schlüssel prüfen
         id: check
         env:
-          TOKENS: ${{ secrets.GARMIN_TOKENS_JSON }}
+          GARMIN_PERSONAL_API_KEY: ${{ secrets.GARMIN_PERSONAL_API_KEY }}
         run: |
-          if [ -z "$TOKENS" ]; then
+          if [ -z "$GARMIN_PERSONAL_API_KEY" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Kein GARMIN_TOKENS_JSON-Secret gesetzt – Export wird übersprungen."
+            echo "GARMIN_PERSONAL_API_KEY fehlt. Bitte einen offiziellen Personal-API-Schlüssel als Repository-Secret hinterlegen (siehe SETUP.md)."
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
@@ -29,44 +35,35 @@ jobs:
       - name: uv installieren
         if: steps.check.outputs.skip == 'false'
         uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
 
-      - name: Garmin-Token bereitstellen
+      - name: Daten über Garmin Personal API exportieren
         if: steps.check.outputs.skip == 'false'
         env:
-          TOKENS: ${{ secrets.GARMIN_TOKENS_JSON }}
-        run: |
-          mkdir -p "$HOME/.garminconnect"
-          printf '%s' "$TOKENS" > "$HOME/.garminconnect/garmin_tokens.json"
+          GARMIN_PERSONAL_API_KEY: ${{ secrets.GARMIN_PERSONAL_API_KEY }}
+        run: uv run scripts/export_data.py
 
-      - name: Strava-Namen nach Garmin übertragen
+      - name: Aktivitätsdetails über Personal API und FIT exportieren
+        if: steps.check.outputs.skip == 'false'
+        env:
+          GARMIN_PERSONAL_API_KEY: ${{ secrets.GARMIN_PERSONAL_API_KEY }}
+        run: uv run scripts/export_details.py
+
+      - name: Strava-Namen im Dashboard übernehmen
         if: steps.check.outputs.skip == 'false'
         env:
           STRAVA_CONFIG_JSON: ${{ secrets.STRAVA_CONFIG_JSON }}
-        # Läuft VOR dem Export: benennst du eine Aktivität auf Strava um, steht
-        # der neue Name schon in Garmin, bevor die Daten gezogen werden — ein
-        # Klick auf "Aktualisieren" reicht also.
-        # Ohne continue-on-error würde ein Strava-Ausfall den gesamten
-        # Garmin-Export blockieren; die Namen sind das kleinere Gut.
+          STRAVA_STATE_DIR: .github/api-state
+        # Die Garmin Personal API ist read-only. Namen werden deshalb nach
+        # dem Export ausschließlich in den Dashboard-Dateien ergänzt.
         continue-on-error: true
         run: |
           if [ -z "$STRAVA_CONFIG_JSON" ]; then
-            echo "Kein STRAVA_CONFIG_JSON-Secret gesetzt – Namensabgleich übersprungen."
+            echo "Kein STRAVA_CONFIG_JSON gesetzt – Namensabgleich übersprungen."
           else
             uv run scripts/namen_sync.py --execute
           fi
-
-      - name: Daten exportieren
-        if: steps.check.outputs.skip == 'false'
-        run: uv run scripts/export_data.py
-
-      - name: Aktivitätsdetails exportieren
-        if: steps.check.outputs.skip == 'false'
-        # Ohne diesen Schritt landen neue Aktivitäten zwar in der Liste, haben
-        # aber nie eine Detail-Datei — die Detailansicht blieb dann leer (keine
-        # HF-Zonen, Splits, Running Dynamics, SWOLF, Wetter). Der Export ist
-        # gecacht: bereits geholte Aktivitäten werden übersprungen, pro Lauf
-        # kommen also nur die neuen dazu.
-        run: uv run scripts/export_details.py
 
       - name: Änderungen committen
         if: steps.check.outputs.skip == 'false'
@@ -74,6 +71,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/data
+          # Nur verschlüsselte .enc-Dateien, niemals lokale Schlüssel/Tokens.
+          for state in .github/api-state/*.enc; do
+            if [ -f "$state" ]; then
+              git add -- "$state"
+            fi
+          done
           if git diff --cached --quiet; then
             echo "Keine Datenänderungen."
           else

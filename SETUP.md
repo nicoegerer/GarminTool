@@ -1,124 +1,174 @@
-# Eigene Instanz aufsetzen
+# Eigene Instanz aufsetzen oder migrieren
 
-Dieses Tool ist **selbst-gehostet**: Jeder betreibt seine **eigene Kopie**
-unter seinem eigenen GitHub-Account. Deine Daten bleiben in deinem Repo, deine
-Zugangsdaten in deinen eigenen GitHub-Secrets — niemand sonst sieht sie. Alles
-läuft kostenlos auf GitHub Actions + GitHub Pages.
+Jeder betreibt seine eigene Kopie unter dem eigenen GitHub-Account. Die
+Datenabfrage läuft über die offiziellen Garmin- und Strava-APIs. Es wird kein
+Garmin-Passwort und kein Garmin-MCP benötigt.
 
-> **Warum keine zentrale Login-Seite?** Für Strava gäbe es dafür eine saubere
-> OAuth-Anmeldung — für **Garmin nicht**. Garmin hat kein Self-Service-API-Portal;
-> volle Garmin-Daten (HRV, Schlaf, Body Battery, Trainingslast) bekommt man nur
-> über den inoffiziellen Login mit E-Mail + Passwort. Fremde Passwörter in eine
-> zentrale Website eingeben zu lassen wäre unsicher, gegen Garmins Regeln und
-> würde dich rechtlich für fremde Gesundheitsdaten verantwortlich machen.
-> Die eigene Kopie umgeht das komplett: Dein Passwort verlässt nie deinen
-> Rechner, es entsteht nur ein Token, und der liegt in **deinen** Secrets.
+## Bestehende Instanz umstellen
 
-Zeitaufwand: ~15 Minuten. Du brauchst einen GitHub-Account und Python (oder
-[uv](https://docs.astral.sh/uv/), empfohlen).
+1. In [Garmin Connect → Personal API Key](https://connect.garmin.com/app/settings/personalApiToken)
+   einen Schlüssel erstellen und seine Gültigkeitsdauer auswählen.
+2. Im Repo unter **Settings → Secrets and variables → Actions** als Secret
+   `GARMIN_PERSONAL_API_KEY` hinterlegen.
+3. Den aktualisierten Workflow **„Garmin-Daten aktualisieren“** manuell starten.
+4. Nach erfolgreichem Wechsel das alte Secret `GARMIN_TOKENS_JSON` entfernen.
+   Alte lokale Garmin-MCP-/`garminconnect`-Tokenstores werden nicht mehr gelesen.
 
----
+Ein vorhandenes `STRAVA_CONFIG_JSON` mit `strava_client_id`,
+`strava_client_secret` und `strava_refresh_token` kann weiterverwendet werden,
+sofern der Refresh-Token noch gültig ist. Andernfalls Strava wie unten erneut
+freigeben. Die Tokens werden bei der Umstellung nicht in Logs ausgegeben.
+
+Die Garmin Personal API ist **read-only**. Der Strava-Namensabgleich aktualisiert
+jetzt ausschließlich die Dashboard-Dateien. Er benennt keine Aktivitäten im
+Garmin-Konto um. Siehe [offizielle Endpunktdokumentation](https://developer.garmin.com/gc-developer-program/personal/swagger-docs/).
 
 ## 1. Repo forken
 
-Oben rechts auf **Fork**. Du bekommst eine eigene Kopie
+Oben rechts **Fork** wählen. Die eigene Kopie liegt danach unter
 `https://github.com/DEIN-NAME/GarminTool`.
 
-## 2. Garmin-Token erzeugen (Pflicht)
+## 2. Offiziellen Garmin-API-Schlüssel hinterlegen
 
-Das holt einen Token aus deinem Garmin-Konto. **Dein Passwort bleibt auf deinem
-Rechner** — ausgegeben wird nur der Token.
+Unter [Garmin Connect → Personal API Key](https://connect.garmin.com/app/settings/personalApiToken)
+**Create Key** wählen, Bedingungen akzeptieren und Ablaufdatum festlegen. Der
+Schlüssel wird nur einmal angezeigt. Direkt als Repository-Secret
+`GARMIN_PERSONAL_API_KEY` speichern, nicht als `NEXT_PUBLIC_…`-Variable.
+
+Garmins offizielles SDK tauscht den Schlüssel gegen einen Bearer-Token aus und
+verwaltet dessen Erneuerung. Nach Ablauf oder Widerruf des **API-Schlüssels** muss
+in Garmin Connect ein neuer erzeugt und das Secret ersetzt werden.
+
+Für lokale Exporte ist Python 3.12+ erforderlich; [uv](https://docs.astral.sh/uv/)
+installiert die Skriptabhängigkeiten automatisch. Optional den Schlüssel einmal
+lokal eingeben und prüfen:
 
 ```bash
-# im geklonten Fork:
 uv run scripts/setup_garmin_token.py
-# ohne uv:  pip install "garminconnect>=0.3.5" && python scripts/setup_garmin_token.py
 ```
 
-Das Skript fragt E-Mail + Passwort (und bei aktivem Zwei-Faktor einen Code) und
-gibt am Ende einen JSON-Block aus. Den kompletten Block kopieren.
+Das Skript fragt ausschließlich den API-Schlüssel verdeckt ab und speichert ihn
+mit eingeschränkten Dateirechten im Standardpfad des offiziellen SDKs
+`~/.config/garmin/connect-personal-api-key`. Alternativ unterstützt das SDK die
+Umgebungsvariable `GARMIN_PERSONAL_API_KEY`. Der lokale Bearer-Cache liegt in
+`.api-state/` und ist von Git ausgeschlossen.
 
-→ In deinem Fork: **Settings → Secrets and variables → Actions → New repository
-secret**, Name `GARMIN_TOKENS_JSON`, den JSON-Block einfügen.
+```bash
+uv run scripts/setup_garmin_token.py --check
+uv run scripts/export_data.py
+uv run scripts/export_details.py
+```
 
-## 3. Strava-Namen (optional)
+Referenzen: [Garmin Personal API](https://developer.garmin.com/gc-developer-program/personal/personal-api/),
+[offizielles Python-SDK](https://github.com/garmin/connect-personal-api-python).
 
-Nur nötig, wenn Aktivitätsnamen von Strava nach Garmin übernommen werden sollen.
+## 3. Strava-Namen im Dashboard (optional)
 
-1. [strava.com/settings/api](https://www.strava.com/settings/api) → App anlegen,
-   **Authorization Callback Domain:** `localhost`.
-2. Client ID + Client Secret notieren.
-3. Refresh-Token holen:
+1. Unter [strava.com/settings/api](https://www.strava.com/settings/api) eine App
+   anlegen. **Authorization Callback Domain:** `localhost`.
+2. Im Repo ausführen:
    ```bash
-   cd strava-sync-local   # Ordner ggf. anlegen
-   # config.json mit client_id/secret anlegen (Vorlage: scripts/namen_sync.py --setup)
-   python ../scripts/namen_sync.py --setup
+   uv run scripts/namen_sync.py --setup
    ```
-4. Den Inhalt der entstandenen `config.json` als Secret `STRAVA_CONFIG_JSON`
-   hinterlegen.
+   Client ID und Client Secret eingeben und die Freigabe im Browser bestätigen.
+   Das Skript benötigt `activity:read_all`, damit auch private Aktivitäten
+   abgeglichen werden können. Der Rückruf läuft nur auf `127.0.0.1:8721` und wird
+   mit OAuth-`state` geprüft.
+3. Den Inhalt von `strava-sync-local/config.json` als Repository-Secret
+   `STRAVA_CONFIG_JSON` hinterlegen. Die Datei ist von Git ausgeschlossen.
+4. Lokal nach dem Garmin-Export ausführen:
+   ```bash
+   uv run scripts/namen_sync.py            # Anzahl gefundener Änderungen
+   uv run scripts/namen_sync.py --execute  # Namen im Dashboard speichern
+   ```
+
+Die Zuordnung berücksichtigt Sportart und lokale Startzeit. Automatiknamen wie
+„Morning Run“ werden standardmäßig übersprungen; `--alle-namen` übernimmt sie
+bei Bedarf. Mit `--tage 60` lässt sich der Zeitraum erweitern.
+
+Strava kann Refresh-Tokens rotieren. Der Workflow persistiert den jeweils
+neuesten Token **verschlüsselt** in `.github/api-state/*.enc`. Der Schlüssel wird
+aus den Zugangsdaten in `STRAVA_CONFIG_JSON` abgeleitet und nicht eingecheckt.
+Dadurch übersteht der Tokenstatus auch Workflow-Pausen und Cache-Löschungen.
+Lokale Aufrufe verwenden `.api-state/`. Der Refresh läuft auf der Standardbranch;
+parallele Läufe werden serialisiert. Dieselbe Strava-Freigabe nicht gleichzeitig in
+mehreren Instanzen verwenden; jede Instanz benötigt ihren eigenen Tokenstatus.
+
+Auch wenn die anschließende Strava-Abfrage scheitert, wird ein bereits rotierter
+Token verschlüsselt gesichert. Strava-Fehler blockieren den Garmin-Export nicht.
+Die ursprüngliche Konfigurationsdatei bzw. das ursprüngliche Secret unverändert
+aufbewahren: Sie werden weiterhin zum Entschlüsseln des Tokenstatus gebraucht.
+Bei einer neuen Freigabe die neue Konfiguration als Secret hinterlegen.
+
+Referenz: [Strava OAuth und Tokenrotation](https://developers.strava.com/docs/authentication/).
+
+## Verfügbare Garmin-Daten
+
+Der Export verwendet ausschließlich dokumentierte Personal-API-Endpunkte:
+
+- Aktivitätsliste und Zusammenfassungen; vorhandene Trainingslastwerte fließen
+  weiter in CTL/ATL/TSB ein.
+- Schritte, Stress, Ruhepuls, Schlaf, HRV, Body Battery und Intensitätsminuten.
+- Gewicht/Körperzusammensetzung, Fitnessalter und aktuelle Herzfrequenzzonen.
+- Runden, Laufmetriken, Schwimmbahnen und Kraftsätze, soweit sie in der über die
+  offizielle API heruntergeladenen FIT-Datei enthalten sind. Originaldateien
+  werden nur im Arbeitsspeicher verarbeitet und nicht veröffentlicht.
+
+VO₂max-Zeitreihen, Trainingsbereitschaft/-status, Wettkampfprognosen,
+Endurance-/Hill-Score, Geräteprofil, Rekorde/Badges, Ausrüstung und
+Kalender-Workouts haben derzeit keine entsprechenden Personal-API-Endpunkte.
+Vorhandene Exporte bleiben erhalten; `manifest.json` kennzeichnet diese Bereiche
+mit `status: unavailable` und `retained`. Neue Werte werden dafür nicht behauptet.
+Optionale Abfragefehler behalten ebenfalls den letzten verfügbaren Stand.
+Fehler bei Authentifizierung oder Aktivitätsliste brechen den Export ab.
+
+Bereits exportierte Aktivitätsdetails bleiben gecacht. Neue Details enthalten
+nur die offiziell verfügbaren Felder; separate Wetter-/Leistungszonen-Abfragen
+werden nicht mehr durchgeführt. Herzfrequenz-Zeiten stammen aus der
+Aktivitätsliste, ihre Grenzen aus den aktuellen Profilzonen. Fehlende FIT-Dateien
+werden bei späteren Läufen erneut versucht. Mit `--force` können Details neu
+abgerufen werden; `--limit 10` beschränkt die Abfragen auf zehn Aktivitäten,
+ohne den vollständigen Aktivitätsindex zu kürzen.
 
 ## 4. KI-Coach (optional)
 
-1. Kostenlosen Google-Gemini-Key auf
-   [aistudio.google.com/apikey](https://aistudio.google.com/apikey) erstellen.
-2. Als Secret `NEXT_PUBLIC_GEMINI_KEY` hinterlegen.
+Einen Google-Gemini-Key auf [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+erstellen und als Secret `NEXT_PUBLIC_GEMINI_KEY` hinterlegen.
 
-> Hinweis: Dieser Key wird ins öffentliche JS-Bundle gebacken (damit der Coach
-> ohne Setup läuft). Er ist damit für Besucher sichtbar. Beim kostenlosen
-> Gemini-Kontingent entstehen keine Kosten — aktiviere für dieses Projekt kein
-> Billing.
+Dieser bestehende Frontend-Key ist für Seitenbesucher im JavaScript sichtbar.
+Garmin- und Strava-Zugangsdaten gehören ausschließlich in die oben genannten
+Secrets und werden nicht in das Frontend eingebaut.
 
 ## 5. Sofort-Aktualisieren-Button (optional)
 
-Ohne das lädt der „Aktualisieren"-Button nur den neuesten bereits
-veröffentlichten Stand (die Daten erneuern sich ohnehin alle 2 Stunden von
-selbst). Für einen echten Sofort-Abruf per Knopfdruck:
+Ohne zusätzliche Einrichtung lädt der Button den zuletzt veröffentlichten Stand.
+Die Daten erneuern sich alle zwei Stunden. Für einen Workflow-Start per Button
+einen [Fine-grained PAT](https://github.com/settings/personal-access-tokens) mit
+**Actions: Read and write** ausschließlich für dieses Repo erstellen und als
+Secret `NEXT_PUBLIC_DISPATCH_TOKEN` hinterlegen.
 
-1. Fine-grained PAT erstellen ([github.com/settings/personal-access-tokens](https://github.com/settings/personal-access-tokens)),
-   **nur dein GarminTool-Repo**, Permission **Actions: Read and write**, sonst nichts.
-2. Als Secret `NEXT_PUBLIC_DISPATCH_TOKEN` hinterlegen.
+Dieser bestehende Dispatch-Token landet im öffentlichen Bundle. Ihn deshalb auf
+das eine Repo und die benötigte Actions-Berechtigung begrenzen.
 
-> Dieser Token landet ebenfalls im öffentlichen Bundle. Deshalb so eng wie
-> möglich scopen — im schlimmsten Fall kann jemand nur einen Refresh-Lauf
-> deines Repos starten, mehr nicht.
+## 6. GitHub Pages aktivieren und starten
 
-## 6. GitHub Pages aktivieren
+1. **Settings → Pages → Build and deployment → Source: GitHub Actions** wählen.
+2. Unter **Actions** die Workflows aktivieren.
+3. **„Garmin-Daten aktualisieren“ → Run workflow** starten.
 
-**Settings → Pages → Build and deployment → Source: GitHub Actions.**
+Nach dem Datenabruf startet der Seiten-Build automatisch. Die Standardadresse
+ist `https://DEIN-NAME.github.io/GarminTool/`.
 
-## 7. Actions freischalten und starten
-
-1. Tab **Actions** öffnen, Workflows aktivieren (Forks starten sie nicht von selbst).
-2. Workflow **„Garmin-Daten aktualisieren"** → **Run workflow**. Er holt deine
-   Daten und stößt automatisch den Seiten-Build an.
-
-Fertig. Deine Seite liegt unter `https://DEIN-NAME.github.io/GarminTool/`.
-
----
-
-## Eigene Domain (optional)
-
-Standardmäßig läuft die Seite unter `DEIN-NAME.github.io/GarminTool/` — der
-Build setzt den Pfad automatisch passend. Willst du eine eigene Domain:
-
-1. Datei `app/public/CNAME` mit deiner Domain anlegen (eine Zeile, z. B.
-   `sport.meinedomain.de`).
-2. Bei deinem DNS-Anbieter einen CNAME-Eintrag auf `DEIN-NAME.github.io` setzen.
-3. **Settings → Pages → Custom domain** eintragen.
-
-Sobald `app/public/CNAME` existiert, baut der Workflow automatisch ohne
-Unterpfad — sonst mit `/<repo-name>`.
-
-## Was ohne Garmin nur eingeschränkt geht
-
-Der KI-Coach, HRV, Schlaf, Body Battery, Trainingslast und die Erholungs-Kacheln
-stammen aus Garmin-Daten. Ohne Garmin-Token bleiben sie leer; Strava allein
-liefert nur Aktivitäten (Läufe, Radtouren, Schwimmen mit Pace/Distanz).
+Für die eigene Domain `app/public/CNAME` anpassen und beim DNS-Anbieter einen
+CNAME auf `DEIN-NAME.github.io` setzen. Unter **Settings → Pages → Custom domain**
+eintragen. Für die Standardadresse die vorhandene `app/public/CNAME` entfernen;
+der Build setzt dann automatisch den Repository-Unterpfad.
 
 ## Datenschutz
 
-Solange dein Repo **öffentlich** ist, sind deine exportierten Daten unter
-`/data/*.json` für jeden lesbar (GPS-Koordinaten sind im Export bewusst
-ausgeschlossen). Wenn du das nicht willst: Repo auf **privat** stellen und die
-Seite über einen zugangsgeschützten Host (z. B. Cloudflare Pages + Access)
-ausliefern statt über das öffentliche GitHub Pages.
+Bei einem öffentlichen Repo und öffentlichen GitHub Pages sind die exportierten
+Trainings- und Gesundheitsdaten unter `/data/*.json` für jeden lesbar. GPS-Felder
+werden standardmäßig ausgeschlossen, auch bei der FIT-Verarbeitung. Die Option
+`export_details.py --include-gps` nur bei zugangsgeschütztem Hosting verwenden.
+Für private Gesundheitsdaten einen privaten Fork und einen zugangsgeschützten
+Host einsetzen.
