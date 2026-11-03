@@ -302,12 +302,17 @@ def weight_entries(client, start: date) -> list[dict]:
             for entry in entries:
                 if not entry:
                     continue
-                # The Personal API documents kilograms; the dashboard uses grams.
+                # Live Personal API responses still contain legacy gram values,
+                # although the published schema describes kilograms. Accept
+                # both body-weight scales; the dashboard always consumes grams.
                 weight = entry.get("weight")
+                weight_g = weight
+                if weight is not None and weight < 1000:
+                    weight_g = weight * 1000
                 result.append(
                     {
                         "date": entry.get("calendarDate") or day.get("summaryDate"),
-                        "weight_g": weight * 1000 if weight is not None else None,
+                        "weight_g": weight_g,
                         "bmi": entry.get("bmi"),
                         "body_fat_pct": entry.get("bodyFat"),
                         "body_water_pct": entry.get("bodyWater"),
