@@ -82,6 +82,8 @@ Der Workflow **„Dashboard im Browser prüfen“** testet alle acht Seiten,
 Aktivitätsdetails, Suche und mobile Navigation auf der veröffentlichten Seite.
 Optional prüft er einen kurzen echten Coach-Aufruf und startet einmal den
 Sofort-Refresh. Er benötigt keine zusätzlichen Secrets.
+Die CI prüft den Coach außerdem mit simulierten Antworten, einem Dienstausfall
+und anschließender Wiederherstellung, ohne Google-Aufrufe oder echte API-Keys.
 
 Next.js 16 · React 19 · TypeScript · Tailwind CSS v4 · Chart.js · Google Gemini ·
 [Garmins offizielles Personal API SDK](https://github.com/garmin/connect-personal-api-python) ·

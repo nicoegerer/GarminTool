@@ -44,7 +44,7 @@ export interface ProviderConfig {
  * flash-latest currently resolves to gemini-3.5-flash with a brutal 20
  * requests/day free cap — a handful of chat turns and it's exhausted. The
  * lite alias has a much higher daily allowance, so it's the primary; the
- * adapter falls back through the rest on a 429.
+ * adapter falls back through the rest on a 429 or temporary server failure.
  */
 export const DEFAULT_CONFIG: ProviderConfig = {
   provider: "gemini",
@@ -53,7 +53,7 @@ export const DEFAULT_CONFIG: ProviderConfig = {
 };
 
 /**
- * Tried in order; a rate-limited model hands off to the next.
+ * Tried in order; a rate-limited or temporarily unavailable model hands off to the next.
  *
  * `thinking` says whether the model accepts a thinkingConfig. It matters both
  * ways: the lite model rejects the field outright with a 400, while the plain

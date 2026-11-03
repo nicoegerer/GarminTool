@@ -38,8 +38,8 @@ export const geminiProvider: AiProvider = {
         },
       });
 
-    // Try each model in turn: if one's free daily quota is spent (429), fall
-    // through to the next instead of dead-ending the chat. A 400 on a model we
+    // Try each model in turn: if its daily quota is spent (429) or it is temporarily
+    // unavailable (5xx), fall through to the next. A 400 on a model we
     // sent thinkingConfig to means the alias moved to a model that rejects it —
     // retry the same model without the field rather than failing the chat.
     const models = modelChain(cfg.geminiModel);
@@ -55,7 +55,7 @@ export const geminiProvider: AiProvider = {
         });
         if (res.ok) break outer;
         if (res.status === 400 && thinking) continue; // retry same model, no thinkingConfig
-        if (res.status === 429 && !last) continue outer; // quota spent → next model
+        if ((res.status === 429 || res.status >= 500) && !last) continue outer;
         throw toError(res.status, await safeText(res));
       }
     }
