@@ -58,7 +58,14 @@ def main():
         )
         page = context.new_page()
         errors = []
-        page.on("pageerror", lambda error: errors.append(type(error).__name__))
+        page.on(
+            "pageerror",
+            lambda error: errors.append(
+                re.sub(r"(https?://[^?\s]+)\?[^\s]+", r"\1?[redacted]", str(error))[
+                    :800
+                ]
+            ),
+        )
         report = {
             "routes": [],
             "activity_details": [],
@@ -206,10 +213,11 @@ def main():
                 report["refresh"] = "failed"
                 failures.append("refresh")
 
-        assert not errors, "JavaScript errors occurred"
+        report["javascript_errors"] = errors
         report["service_statuses"] = service_statuses
         print(json.dumps(report, ensure_ascii=False, indent=2))
         browser.close()
+        assert not errors, "JavaScript errors occurred"
         assert not failures, f"Optional checks failed: {', '.join(failures)}"
 
 
