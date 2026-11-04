@@ -504,6 +504,27 @@ class ExportTests(unittest.TestCase):
         )
         self.assertEqual(zones, {"generateDefaults": "false"})
 
+    def test_weekly_report_device_keys_are_anonymous_without_losing_measurements(self):
+        raw = {
+            "reportData": {
+                "private-device-a": [
+                    {"calendarDate": str(DAY), "weeklyTrainingLoad": 400}
+                ],
+                "private-device-b": [
+                    {"calendarDate": str(DAY), "weeklyTrainingLoad": 200}
+                ],
+            }
+        }
+        cleaned = connect_metrics.safe_metrics(raw)
+        self.assertEqual(list(cleaned["reportData"]), ["device_0", "device_1"])
+        self.assertEqual(
+            cleaned["reportData"]["device_0"][0]["weeklyTrainingLoad"], 400
+        )
+        self.assertEqual(
+            cleaned["reportData"]["device_1"][0]["weeklyTrainingLoad"], 200
+        )
+        self.assertNotIn("private-device", json.dumps(cleaned))
+
 
 class FitTests(unittest.TestCase):
     def fit_zip(self):

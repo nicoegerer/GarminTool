@@ -27,7 +27,7 @@ export function TrainingMetrics() {
         {metrics.map((metric) => (
           <div key={metric.key}>
             <p className="text-[12px] text-ink-3">{metric.label}{!saved && manifest?.sections[metric.section]?.retained && " · gespeichert"}</p>
-            <p className="mt-1 text-lg font-semibold tabular">{fmtNum(metric.value, metric.key === "cycling_vo2" ? 1 : 0)} <span className="text-[12px] font-normal text-ink-3">{metric.unit}</span></p>
+            <p className="mt-1 text-lg font-semibold tabular">{fmtNum(metric.value, metric.key.startsWith("cycling_") ? 1 : 0)} <span className="text-[12px] font-normal text-ink-3">{metric.unit}</span></p>
             {metric.date && <p className="text-[11px] text-ink-3">{fmtDateShort(metric.date)}</p>}
           </div>
         ))}

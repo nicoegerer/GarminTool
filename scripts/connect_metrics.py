@@ -19,6 +19,7 @@ def safe_metrics(value, parent=""):
                     "latestTrainingStatusData",
                     "metricsTrainingLoadBalanceDTOMap",
                     "metricsTrainingStatusDTOMap",
+                    "reportData",
                 }
                 else key
             ): safe_metrics(item, key)
