@@ -233,6 +233,12 @@ def main():
                             }
                         },
                         "cycling_ftp": {"functionalThresholdPower": 250},
+                        "cycling_ability": {
+                            "calendarDate": "2026-11-03",
+                            "aerobicEndurance": 75.5,
+                            "aerobicCapacity": 65.2,
+                            "anaerobicCapacity": 55.1,
+                        },
                         "max_metrics_latest": {
                             "cycling": {
                                 "calendarDate": "2026-11-03",
@@ -258,6 +264,9 @@ def main():
             ).wait_for()
             metrics_page.get_by_text("Produktiv", exact=True).wait_for()
             metrics_page.get_by_text("FTP Rad", exact=True).wait_for()
+            metrics_page.get_by_text("Rad: aerobe Ausdauer", exact=True).wait_for()
+            metrics_page.get_by_text("Rad: aerobe Kapazität", exact=True).wait_for()
+            metrics_page.get_by_text("Rad: anaerobe Kapazität", exact=True).wait_for()
             metrics_page.get_by_text("Trainingsbereitschaft", exact=True).wait_for()
             metrics_page.get_by_text("Leistungsverlauf", exact=True).click()
             metrics_page.get_by_role(

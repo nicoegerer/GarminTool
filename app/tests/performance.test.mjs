@@ -12,6 +12,7 @@ test("new performance data preserves sport, units, precise VO2max and zero readi
   const metrics = performanceMetrics({
     max_metrics_latest: { generic: { vo2MaxValue: 42 }, cycling: { calendarDate: "2026-11-03", vo2MaxPreciseValue: 55.3, vo2MaxValue: 55 } },
     cycling_ftp: { functionalThresholdPower: 250 },
+    cycling_ability: { calendarDate: "2026-11-03", aerobicEndurance: 75.5, aerobicCapacity: 65.2, anaerobicCapacity: 55.1 },
     lactate_threshold: { speed_and_heart_rate: { heartRate: 180 } },
   }, { readiness: [{ calendarDate: "2026-11-03", score: 0 }] });
   assert.equal(metrics.find((row) => row.key === "cycling_vo2").value, 55.3);
@@ -19,6 +20,10 @@ test("new performance data preserves sport, units, precise VO2max and zero readi
   assert.equal(metrics.find((row) => row.key === "threshold_hr").unit, "bpm");
   assert.equal(metrics.find((row) => row.key === "readiness").value, 0);
   assert.equal(metrics.find((row) => row.key === "readiness").section, "daily.readiness");
+  assert.equal(metrics.find((row) => row.key === "cycling_endurance").value, 75.5);
+  assert.equal(metrics.find((row) => row.key === "cycling_aerobic").value, 65.2);
+  assert.equal(metrics.find((row) => row.key === "cycling_anaerobic").value, 55.1);
+  assert.equal(metrics.find((row) => row.key === "cycling_anaerobic").section, "fitness.cycling_ability");
 });
 
 test("dated series use the latest measurement and the correct training status", () => {

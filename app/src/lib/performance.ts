@@ -39,7 +39,9 @@ export function performanceMetrics(fitness: FitnessData, daily: DailyData): Perf
     ["fitness_age", "Fitnessalter", fitness.fitness_age, ["fitnessAge"], "Jahre"],
     ["ftp", "FTP Rad", fitness.cycling_ftp, ["functionalThresholdPower", "ftp"], "W"],
     ["threshold_hr", "Laktatschwelle", fitness.lactate_threshold, ["heartRate"], "bpm"],
-    ["cycling_ability", "Cycling Ability", fitness.cycling_ability, ["cyclingAbilityScore", "overallScore"], ""],
+    ["cycling_endurance", "Rad: aerobe Ausdauer", fitness.cycling_ability, ["aerobicEndurance"], ""],
+    ["cycling_aerobic", "Rad: aerobe Kapazität", fitness.cycling_ability, ["aerobicCapacity"], ""],
+    ["cycling_anaerobic", "Rad: anaerobe Kapazität", fitness.cycling_ability, ["anaerobicCapacity"], ""],
     ["running_economy", "Laufökonomie", fitness.running_economy, ["runningEconomyScore", "score"], ""],
     ["heat", "Hitzeanpassung", fitness.heat_altitude_acclimation, ["heatAcclimationPercentage"], "%"],
     ["altitude", "Höhenanpassung", fitness.heat_altitude_acclimation, ["altitudeAcclimation"], "m"],
@@ -49,7 +51,8 @@ export function performanceMetrics(fitness: FitnessData, daily: DailyData): Perf
   const sources: Record<string, string> = {
     readiness: "daily.readiness", weekly_load: "fitness.training_status", cycling_vo2: "fitness.max_metrics_latest",
     fitness_age: "fitness.fitness_age", ftp: "fitness.cycling_ftp", threshold_hr: "fitness.lactate_threshold",
-    cycling_ability: "fitness.cycling_ability", running_economy: "fitness.running_economy", heat: "fitness.heat_altitude_acclimation",
+    cycling_endurance: "fitness.cycling_ability", cycling_aerobic: "fitness.cycling_ability", cycling_anaerobic: "fitness.cycling_ability",
+    running_economy: "fitness.running_economy", heat: "fitness.heat_altitude_acclimation",
     altitude: "fitness.heat_altitude_acclimation", endurance: "fitness.endurance_score", hill: "fitness.hill_score",
   };
   return definitions.flatMap(([key, label, data, fields, unit]) => {
