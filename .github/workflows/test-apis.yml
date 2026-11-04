@@ -1,4 +1,4 @@
-name: Offizielle API-Anbindungen testen
+name: API-Anbindungen testen
 
 on:
   push:

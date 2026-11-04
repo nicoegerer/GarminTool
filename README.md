@@ -1,73 +1,87 @@
 # GarminTool
 
 Ein selbst gehostetes Trainings-Dashboard mit Aktivitäten, Trainingslast
-(CTL/ATL/TSB), Gesundheitswerten und KI-Coach. Der Datenabruf verwendet die
-**offizielle Garmin Connect Personal API**. Optional ergänzt die **offizielle
-Strava API** die Aktivitätsnamen im Dashboard.
+(CTL/ATL/TSB), Gesundheitswerten, Garmin-Leistungsdaten und KI-Coach.
+Der Garmin-Abruf verwendet **[python-garminconnect 0.3.20](https://github.com/cyberjunky/python-garminconnect)**
+direkt. Strava ergänzt Aktivitätsnamen über die **offizielle Strava API**.
 
-GitHub Actions aktualisiert die Daten alle zwei Stunden; GitHub Pages liefert
-bei entsprechender Einrichtung das statisch exportierte Next.js-Frontend aus.
-Der Datenabruf läuft direkt von GitHub Actions zu Garmin und Strava. Die Seite
-liest anschließend die exportierten JSON-Dateien; die Garmin- und
-Strava-Zugangsdaten bleiben im jeweiligen Workflow.
+GitHub Actions aktualisiert alle zwei Stunden die JSON-Dateien unter `docs/data/`.
+GitHub Pages veröffentlicht das statisch exportierte Next.js-Frontend.
+Garmin-Tokens bleiben im Workflow; es ist kein MCP-Server erforderlich.
+`python-garminconnect` ist ein inoffizieller Client für Garmin Connect.
 
-**Einrichtung und Migration: [SETUP.md](SETUP.md)**
+**Einrichtung und Umstellung: [SETUP.md](SETUP.md)**
 
-Für Garmin genügt ein persönlicher API-Schlüssel aus
-[Garmin Connect](https://connect.garmin.com/app/settings/personalApiToken), der als
-Repository-Secret `GARMIN_PERSONAL_API_KEY` hinterlegt wird. API-Schlüssel und
-OAuth-Tokens bleiben außerhalb des Frontend-Bundles und der veröffentlichten Daten.
+## Garmin-Anmeldung
 
-Die Garmin Personal API liefert Aktivitäten, Aktivitätsdetails/FIT-Dateien und
-verfügbare Gesundheitsdaten. Strava ergänzt Aktivitätsnamen im Dashboard.
-Beide Anbindungen verwenden die offiziellen Anmeldeverfahren.
+Einmal lokal im Repository anmelden, einschließlich MFA, wenn Garmin danach fragt:
 
-**Funktionsgrenzen:** Die Garmin Personal API ist lesend. VO₂max-Zeitreihen,
-Trainingsstatus, Wettkampfprognosen und Rekorde werden darüber derzeit nicht
-aktualisiert. Vorhandene Exporte bleiben erhalten und sind in der Oberfläche
-als gespeicherter Stand gekennzeichnet. Details stehen in [SETUP.md](SETUP.md).
+```bash
+uv run scripts/setup_garmin_token.py
+```
 
-Der Anzeigename bleibt beim Daten-Refresh erhalten. Bei Bedarf lässt er sich
-über die normale GitHub-Actions-Variable `DASHBOARD_DISPLAY_NAME` einstellen;
-dafür ist kein zusätzlicher API-Key erforderlich.
+Den gesamten Inhalt der erzeugten `.garmin_tokens/garmin_tokens.json` als
+GitHub-Actions-Secret **`GARMIN_TOKENS_JSON`** speichern und den Workflow
+**„Garmin-Daten aktualisieren“** starten. Passwort und MFA-Code werden nicht
+mitgespeichert; Token-Inhalte werden nicht in der Konsole ausgegeben.
 
-## Welche Zugangsdaten werden gebraucht?
+**Alte `garth`-Tokens aus Version 0.2.x funktionieren nicht mehr.** Ein vorhandenes
+`GARMIN_TOKENS_JSON` deshalb mit der neu erzeugten Datei ersetzen. Der zuvor
+verwendete `GARMIN_PERSONAL_API_KEY` wird nicht mehr gelesen und kann nach einem
+erfolgreichen neuen Datenabruf entfernt werden.
 
-Für Garmin und Strava genügen **zwei Repository-Secrets**. Die weiteren Secrets
-gehören zu optionalen Zusatzfunktionen:
+## Funktionen
 
-| Secret | Zweck | Benötigt |
-| --- | --- | --- |
-| `GARMIN_PERSONAL_API_KEY` | Eigene Garmin-Daten über die offizielle Personal API abrufen | Ja |
-| `STRAVA_CONFIG_JSON` | Offizielle Strava-OAuth-Anmeldung für Aktivitätsnamen | Bei Nutzung von Strava |
-| `NEXT_PUBLIC_GEMINI_KEY` | Anfragen des KI-Coachs an Google Gemini | Nur für den KI-Coach |
-| `NEXT_PUBLIC_DISPATCH_TOKEN` | GitHub-Refresh-Workflow direkt aus der Website starten | Nur für Sofort-Abruf per Button |
+- Aktivitätsliste, Details, Runden, Schwimmbahnen und Kraftsätze.
+- Schritte, Schlaf, Stress, Ruhepuls, Body Battery, HRV und Gewicht.
+- Garmin-Originalwerte für VO₂max-Verlauf, Trainingsstatus, Readiness,
+  Wettkampfprognosen, Rekorde und Badges.
+- Neue lesende Funktionen: wöchentlicher Trainingsstatus-Verlauf, aktuelle
+  VO₂max-Werte nach Sportart, Herzfrequenzzonen v2, Fitnessalter mit Details,
+  Hitze-/Höhenanpassung, Cycling Ability, Laufökonomie, Critical Swim Speed,
+  Laktatschwelle, FTP, Leistungszonen und Rad-Leistungskurve.
+- Unter **Training → Garmin-Leistung** erscheinen vorhandene Kennzahlen sowie
+  erkannte Last- und Leistungskurven. Leere oder unbekannte Datenformate erzeugen
+  keine erfundenen Messwerte oder geratenen Einheiten. Einige zusätzliche
+  Antworten bleiben zunächst nur im Export verfügbar.
+- Der Coach berücksichtigt vorhandene HRV-, Readiness-, FTP- und Leistungsdaten
+  und unterscheidet fehlende Messwerte von einem fehlgeschlagenen Abruf.
 
-Strava verwendet OAuth statt eines einzelnen dauerhaften API-Schlüssels.
-Client-ID, Client-Secret und Refresh-Token sind gemeinsam in
-`STRAVA_CONFIG_JSON` gespeichert; daraus erneuert das Skript den kurzlebigen
-Access-Token automatisch. Es wird kein zusätzlicher Strava-Key benötigt.
-Garmin- und Strava-Zugangsdaten gelten jeweils für ihren Anbieter; Google und
-GitHub benötigen für ihre Zusatzfunktionen eigene Berechtigungen.
+Welche Werte verfügbar sind, hängt vom Gerät und von aufgezeichneten Messungen
+ab. Bei optionalen Abruffehlern bleibt der letzte Stand erhalten; die Oberfläche
+kennzeichnet ihn dezent. Ein kleiner aufklappbarer Hinweis nennt noch ausstehende
+Einrichtung oder gespeicherte Daten. Authentifizierungsfehler und Anfragelimits
+brechen den Export ab, bevor neue Dashboard-Dateien geschrieben werden.
 
-Ohne die beiden optionalen Secrets funktioniert der automatische Datenabruf
-alle zwei Stunden weiterhin. Hinweise zum Wechsel älterer Installationen stehen
-im Abschnitt „Bestehende Instanz umstellen“ in [SETUP.md](SETUP.md).
+CTL/ATL/TSB werden weiterhin im Dashboard selbst aus den Trainingslasten
+berechnet. Garmin-Einstufungen und Garmin-Rekorde werden direkt abgerufen.
 
-## Aufbau
+## Zugangsdaten
 
-- `app/` – Next.js-Frontend, liest `docs/data/*.json`.
-- `scripts/export_data.py` – offizielle Garmin-Daten und abgeleitete Trainingslast.
-- `scripts/export_details.py`, `scripts/fit_details.py` – Aktivitätsdetails und
-  FIT-Dateien über die offizielle API und das offizielle Garmin FIT SDK.
-- `scripts/setup_garmin_api.py` – persönlichen API-Schlüssel lokal prüfen/speichern.
-- `scripts/sync_strava_names.py`, `scripts/strava_api.py` – Strava-OAuth und Dashboard-Namen.
-- `.github/workflows/` – automatischer Datenabruf, API-Tests und Seiten-Build.
+| Secret | Zweck |
+| --- | --- |
+| `GARMIN_TOKENS_JSON` | Neue Garmin-Connect-DI-Tokens aus dem lokalen Setup |
+| `STRAVA_CONFIG_JSON` | Optional: offizielle Strava-OAuth-Anmeldung für Aktivitätsnamen |
+| `NEXT_PUBLIC_GEMINI_KEY` | Optional: KI-Coach mit Google Gemini |
+| `NEXT_PUBLIC_DISPATCH_TOKEN` | Optional: Datenabruf per Website-Button |
+
+Für Garmin braucht es **einen Secret-Eintrag**, keinen zusätzlichen API-Key.
+Stravas Client-ID, Client-Secret und Refresh-Token liegen zusammen in einem
+weiteren Secret. Google und GitHub benötigen für ihre Zusatzfunktionen eigene
+Berechtigungen. Ohne Dispatch-Token läuft der geplante Zwei-Stunden-Abruf weiter.
+Die beiden `NEXT_PUBLIC_…`-Werte werden für die Browserfunktionen ins Frontend
+übernommen; Garmin- und Strava-Tokens werden nicht veröffentlicht.
+
+Erneuerte Garmin- und Strava-Tokens werden verschlüsselt unter
+`.github/api-state/*.enc` gespeichert. Die Verschlüsselung wird aus dem jeweiligen
+Secret abgeleitet; es wird kein weiterer Schlüssel benötigt. Den ursprünglichen
+Secret-Inhalt unverändert lassen, bis eine neue Anmeldung nötig ist.
 
 ## Entwicklung
 
 Python 3.12+ und [uv](https://docs.astral.sh/uv/); die Skripte deklarieren ihre
-Abhängigkeiten selbst. Die Integrationstests laufen ohne Zugangsdaten oder Netz:
+Abhängigkeiten selbst. Integrationstests verwenden die gepinnte Bibliothek mit
+Testantworten und benötigen weder Zugangsdaten noch echte Garmin-Anfragen.
 
 ```bash
 uv run tests/test_api_integration.py
@@ -79,13 +93,11 @@ npm run build
 ```
 
 Der Workflow **„Dashboard im Browser prüfen“** testet alle acht Seiten,
-Aktivitätsdetails, Suche und mobile Navigation auf der veröffentlichten Seite.
-Optional prüft er einen kurzen echten Coach-Aufruf und startet einmal den
-Sofort-Refresh. Er benötigt keine zusätzlichen Secrets.
-Die CI prüft den Coach außerdem mit simulierten Antworten, einem Dienstausfall
-und anschließender Wiederherstellung, ohne Google-Aufrufe oder echte API-Keys.
+Aktivitätsdetails, Suche und mobile Navigation. Optional prüft er einen echten
+Coach-Aufruf oder den Sofort-Refresh. Die CI prüft Coach-Antworten, Fehlerfälle
+und Wiederherstellung mit simulierten Antworten ohne Google-Aufrufe.
 
 Next.js 16 · React 19 · TypeScript · Tailwind CSS v4 · Chart.js · Google Gemini ·
-[Garmins offizielles Personal API SDK](https://github.com/garmin/connect-personal-api-python) ·
+[python-garminconnect](https://github.com/cyberjunky/python-garminconnect/releases/tag/0.3.20) ·
 [Garmin FIT SDK](https://github.com/garmin/fit-python-sdk) ·
 [Strava API v3](https://developers.strava.com/docs/).

@@ -208,8 +208,8 @@ export interface DailyData {
     vigorousValue: number | null;
   }[];
   /** Present but empty on FR945 — the watch has no HRV/Readiness sensor stack. */
-  hrv?: unknown[];
-  readiness?: unknown[];
+  hrv?: { date?: string; avg?: number | null; status?: string; weekly_avg?: number | null }[];
+  readiness?: { calendarDate?: string; score?: number | null; recoveryTime?: number | null; timestampLocal?: string }[];
 }
 
 export interface RacePrediction {
@@ -240,11 +240,24 @@ export interface FitnessData {
       metricsTrainingLoadBalanceDTOMap?: Record<string, LoadBalance>;
     };
     mostRecentTrainingStatus?: {
-      latestTrainingStatusData?: Record<string, { trainingStatusFeedbackPhrase?: string; weeklyTrainingLoad?: number }>;
+      latestTrainingStatusData?: Record<string, { trainingStatusFeedbackPhrase?: string; weeklyTrainingLoad?: number; calendarDate?: string }>;
     };
   };
   race_predictions?: RacePrediction;
   race_predictions_history?: RacePrediction[];
+  training_status_history?: unknown;
+  max_metrics_latest?: unknown;
+  heat_altitude_acclimation?: unknown;
+  cycling_ability?: unknown;
+  running_economy?: unknown;
+  critical_swim_speed?: unknown;
+  lactate_threshold?: unknown;
+  cycling_ftp?: unknown;
+  power_curve?: unknown;
+  power_zones?: unknown;
+  fitness_age?: unknown;
+  endurance_score?: unknown;
+  hill_score?: unknown;
   hr_zones?: {
     sport: string;
     zone1Floor: number;
@@ -280,6 +293,8 @@ export interface Profile {
 }
 
 export interface Manifest {
+  source?: string;
+  client_version?: string;
   generated_at: string;
   sections: Record<string, { ok: boolean; count?: number; error?: string; status?: string; retained?: boolean; source?: string }>;
 }

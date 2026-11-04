@@ -3,13 +3,12 @@ import { fmtDur, fmtKm, fmtPace, fmtTime, lagDays, median, paceFromSpeed } from 
 import { typeLabel } from "../sports";
 import type { UserPrefs } from "../prefs";
 import { athleteName } from "../profile";
+import { performanceMetrics } from "../performance";
 
 /**
  * Turns the Garmin export into the block of facts every AI call is grounded in.
  *
- * The FR945 provides no HRV and no Training Readiness — those blocks are stated
- * as missing rather than omitted, so the model says "I don't have that" instead
- * of inventing a number.
+ * Missing device-specific measurements and retained exports are stated explicitly.
  */
 export function buildContext(data: GarminData, prefs: UserPrefs): string {
   const { profile, activities, daily, fitness, records, loadTrend, today } = data;
@@ -18,11 +17,11 @@ export function buildContext(data: GarminData, prefs: UserPrefs): string {
   const out: string[] = [];
 
   const historical = Object.entries(data.manifest?.sections ?? {})
-    .filter(([, section]) => section.status === "unavailable" && section.retained)
+    .filter(([, section]) => !section.ok && section.retained)
     .map(([section]) => section);
   if (historical.length) {
     out.push(`DATENSTAND: ${historical.join(", ")} stammen aus früheren Exporten. ` +
-      "Diese Bereiche werden von der Garmin Personal API derzeit nicht aktualisiert. " +
+      "Der letzte Abruf dieser Bereiche ist fehlgeschlagen. " +
       "Bezeichne sie nicht als aktuelle Messungen und berücksichtige vorhandene Datumsangaben.");
   }
 
@@ -122,10 +121,23 @@ export function buildContext(data: GarminData, prefs: UserPrefs): string {
   out.push(`ERHOLUNG:\n${rec.join("\n")}`);
 
   /* --- Was fehlt: explizit benennen, damit nichts erfunden wird --- */
-  out.push(
-    "NICHT VERFÜGBAR (Gerät liefert es nicht — niemals schätzen oder erfinden): " +
-      "HRV/HRV-Status, Training Readiness, Muskelbelastung, Regenerationszeit-Countdown, FTP (nie gesetzt), Rad-Leistungsdaten.",
-  );
+  const performance = performanceMetrics(fitness, daily);
+  if (performance.length) out.push("GARMIN-LEISTUNGSDATEN:\n" + performance.map((metric) =>
+    `${metric.label}: ${metric.value} ${metric.unit}${metric.date ? ` (${metric.date})` : ""}` +
+    (data.manifest?.sections[metric.section]?.retained ? " — gespeicherter Stand" : ""),
+  ).join("\n"));
+  const hrv = (daily.hrv ?? []).filter((row) => row.avg != null);
+  if (hrv.length) {
+    const latest = hrv.at(-1)!;
+    out.push(`HRV: ${latest.avg} ms am ${latest.date ?? "unbekannten Datum"}, Status ${latest.status ?? "unbekannt"}.`);
+  }
+  const missing = [
+    !hrv.length && "HRV/HRV-Status",
+    !performance.some((metric) => metric.key === "readiness") && "Training Readiness",
+    !performance.some((metric) => metric.key === "ftp") && "FTP",
+    !activities.some((activity) => activity.group === "ride" && activity.avgPower != null) && "Rad-Leistungsdaten",
+  ].filter(Boolean);
+  if (missing.length) out.push(`NICHT VERFÜGBAR (keine Messwerte im Export — niemals erfinden): ${missing.join(", ")}.`);
 
   /* --- Letzte Einheiten --- */
   out.push(`LETZTE EINHEITEN (neueste zuerst):\n${activities.slice(0, 14).map(describeActivity).join("\n")}`);

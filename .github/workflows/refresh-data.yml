@@ -20,17 +20,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Personal-API-Schlüssel prüfen
+      - name: Garmin-Connect-Token prüfen
         id: check
         env:
-          GARMIN_PERSONAL_API_KEY: ${{ secrets.GARMIN_PERSONAL_API_KEY }}
+          GARMIN_TOKENS_JSON: ${{ secrets.GARMIN_TOKENS_JSON }}
         run: |
-          if [ -z "$GARMIN_PERSONAL_API_KEY" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "GARMIN_PERSONAL_API_KEY fehlt. Bitte einen offiziellen Personal-API-Schlüssel als Repository-Secret hinterlegen (siehe SETUP.md)."
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
+          python - <<'PY'
+          import json, os
+          try:
+              tokens = json.loads(os.environ.get("GARMIN_TOKENS_JSON", ""))
+              valid = isinstance(tokens, dict) and all(isinstance(tokens.get(k), str) and tokens[k].strip() for k in ("di_token", "di_refresh_token", "di_client_id"))
+          except ValueError:
+              valid = False
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"skip={'false' if valid else 'true'}\n")
+          if not valid:
+              print("::notice::Neue Garmin-Connect-Anmeldung erforderlich: setup_garmin_token.py ausführen und garmin_tokens.json als GARMIN_TOKENS_JSON speichern. Alte garth-Tokens sind nicht kompatibel. Siehe SETUP.md.")
+          PY
 
       - name: uv installieren
         if: steps.check.outputs.skip == 'false'
@@ -38,17 +44,19 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Daten über Garmin Personal API exportieren
+      - name: Garmin-Daten exportieren
         if: steps.check.outputs.skip == 'false'
         env:
-          GARMIN_PERSONAL_API_KEY: ${{ secrets.GARMIN_PERSONAL_API_KEY }}
+          GARMIN_TOKENS_JSON: ${{ secrets.GARMIN_TOKENS_JSON }}
+          GARMIN_STATE_DIR: .github/api-state
           DASHBOARD_DISPLAY_NAME: ${{ vars.DASHBOARD_DISPLAY_NAME }}
         run: uv run scripts/export_data.py
 
-      - name: Aktivitätsdetails über Personal API und FIT exportieren
+      - name: Aktivitätsdetails und FIT exportieren
         if: steps.check.outputs.skip == 'false'
         env:
-          GARMIN_PERSONAL_API_KEY: ${{ secrets.GARMIN_PERSONAL_API_KEY }}
+          GARMIN_TOKENS_JSON: ${{ secrets.GARMIN_TOKENS_JSON }}
+          GARMIN_STATE_DIR: .github/api-state
         run: uv run scripts/export_details.py
 
       - name: Strava-Namen im Dashboard übernehmen
@@ -56,8 +64,7 @@ jobs:
         env:
           STRAVA_CONFIG_JSON: ${{ secrets.STRAVA_CONFIG_JSON }}
           STRAVA_STATE_DIR: .github/api-state
-        # Die Garmin Personal API ist read-only. Namen werden deshalb nach
-        # dem Export ausschließlich in den Dashboard-Dateien ergänzt.
+        # Namen ausschließlich in den Dashboard-Dateien ergänzen.
         continue-on-error: true
         run: |
           if [ -z "$STRAVA_CONFIG_JSON" ]; then
@@ -82,5 +89,20 @@ jobs:
             echo "Keine Datenänderungen."
           else
             git commit -m "chore: Garmin-Daten aktualisiert ($(date -u +%F))"
+            git push
+          fi
+
+      - name: Erneuerte Garmin-Tokens nach einem fehlgeschlagenen Export sichern
+        if: failure() && steps.check.outputs.skip == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for state in .github/api-state/garmin-*.enc; do
+            if [ -f "$state" ]; then
+              git add -- "$state"
+            fi
+          done
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: erneuerten Garmin-Tokenstatus sichern"
             git push
           fi

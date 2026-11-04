@@ -10,6 +10,6 @@ const HISTORICAL_SECTIONS = [
 export function historicalDataLabels(manifest: Manifest | null): string[] {
   return HISTORICAL_SECTIONS.filter(([key]) => {
     const section = manifest?.sections?.[key];
-    return section?.status === "unavailable" && section.retained;
+    return section?.ok === false && section.retained;
   }).map(([, label]) => label);
 }
