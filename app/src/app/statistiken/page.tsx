@@ -152,7 +152,7 @@ function Stats() {
           )}
         </ChartCard>
 
-        <ChartCard title="VO₂max" hint="aus Laufeinheiten geschätzt">
+        <ChartCard title="VO₂max" hint="Garmins Schätzung · Laufen">
           {vo2w.length >= 2 ? (
             <LineChart
               labels={vo2w.map((v) => fmtDateShort(v.date))}

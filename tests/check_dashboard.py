@@ -199,6 +199,83 @@ def main():
         fallback.close()
         report["invalid_name_fallback"] = True
 
+        if args.mock_coach:
+            metrics_page = context.new_page()
+            metrics_page.on("pageerror", lambda error: errors.append(str(error)[:800]))
+            metrics_page.route(
+                "**/data/manifest.json",
+                lambda route: route.fulfill(
+                    json={
+                        "generated_at": "2026-11-03T12:00:00Z",
+                        "source": "python_garminconnect",
+                        "sections": {},
+                    }
+                ),
+            )
+            metrics_page.route(
+                "**/data/daily.json",
+                lambda route: route.fulfill(
+                    json={"readiness": [{"calendarDate": "2026-11-03", "score": 75}]}
+                ),
+            )
+            metrics_page.route(
+                "**/data/fitness.json",
+                lambda route: route.fulfill(
+                    json={
+                        "training_status": {
+                            "mostRecentTrainingStatus": {
+                                "latestTrainingStatusData": {
+                                    "watch": {
+                                        "trainingStatusFeedbackPhrase": "PRODUCTIVE",
+                                        "weeklyTrainingLoad": 500,
+                                    }
+                                }
+                            }
+                        },
+                        "cycling_ftp": {"functionalThresholdPower": 250},
+                        "max_metrics_latest": {
+                            "cycling": {
+                                "calendarDate": "2026-11-03",
+                                "vo2MaxPreciseValue": 55.3,
+                            }
+                        },
+                        "training_status_history": [
+                            {"calendarDate": "2026-10-26", "weeklyTrainingLoad": 400},
+                            {"calendarDate": "2026-11-02", "weeklyTrainingLoad": 500},
+                        ],
+                        "power_curve": {
+                            "series": [
+                                {"duration": 60, "power": 350},
+                                {"duration": 300, "power": 250},
+                            ]
+                        },
+                    }
+                ),
+            )
+            metrics_page.goto(base + "/training/", wait_until="networkidle")
+            metrics_page.get_by_role(
+                "heading", name="Garmin-Leistung", exact=True
+            ).wait_for()
+            metrics_page.get_by_text("Produktiv", exact=True).wait_for()
+            metrics_page.get_by_text("FTP Rad", exact=True).wait_for()
+            metrics_page.get_by_text("Trainingsbereitschaft", exact=True).wait_for()
+            metrics_page.get_by_text("Leistungsverlauf", exact=True).click()
+            metrics_page.get_by_role(
+                "heading", name="Leistungskurve Rad · 90 Tage", exact=True
+            ).wait_for()
+            assert metrics_page.locator("canvas").count() >= 2
+            metrics_page.set_viewport_size({"width": 390, "height": 844})
+            # Chart.js resizes its canvas through ResizeObserver after the viewport changes.
+            metrics_page.wait_for_function(
+                "document.documentElement.scrollWidth <= innerWidth", timeout=5000
+            )
+            assert not metrics_page.evaluate(
+                "document.documentElement.scrollWidth > innerWidth"
+            ), "Performance cards overflow on mobile"
+            assert not errors, "JavaScript errors in new performance features"
+            metrics_page.close()
+            report["garmin_performance_features"] = True
+
         failures = []
         service_statuses = []
         page.on(

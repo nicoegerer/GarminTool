@@ -1,8 +1,8 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["garmin-connect-personal-api-python==1.0.0", "garmin-fit-sdk==21.218.0", "cryptography>=46,<51"]
+# dependencies = ["garminconnect==0.3.20", "garmin-fit-sdk==21.218.0", "cryptography>=46,<51"]
 # ///
-"""Contract/regression tests for the official APIs; no credentials or network."""
+"""Contract/regression tests for Garmin Connect and Strava; no credentials/network."""
 
 import io
 import json
@@ -19,56 +19,64 @@ from zipfile import ZipFile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
+import connect_metrics
 import export_data
 import export_details
 import fit_details
+import garmin_api
+import setup_garmin_token
 import strava_api
 import sync_strava_names
 from garmin_fit_sdk import Encoder, Profile
-from garmin_personal_api import GarminPersonalApiClient
-from garmin_personal_api.errors import HttpError
+from garminconnect import (
+    Garmin,
+    GarminConnectAuthenticationError,
+    GarminConnectConnectionError,
+    GarminConnectTooManyRequestsError,
+)
 
 DAY = date(2026, 11, 3)
 
 
 def response(value):
-    result = Mock()
-    result.ok = True
-    result.content = json.dumps(value).encode()
-    result.json.return_value = value
-    return result
+    return value
 
 
-class OfficialTransport:
-    """Serve documented SDK requests with realistic Personal API response shapes."""
+class ConnectTransport:
+    """Run the pinned library methods against a local Connect API test double."""
 
     def __init__(self):
-        self.session = Mock()
-        self.session.get.side_effect = self.get
+        self.api = Garmin()
+        self.api.display_name = "test-athlete"
+        self.api.unit_system = "metric"
+        self.api.get_full_name = lambda: self.display_name
+        self.api.connectapi = Mock(side_effect=self.get)
         self.calls = []
         self.fail = None
         self.weight = 72.5
         self.display_name = "Test Athlete"
 
-    def get(self, url, *, headers, params, timeout):
-        self.calls.append((url, params))
-        assert url.startswith("https://personal.connectapi.garmin.com/")
-        assert headers["Authorization"] == "Bearer test-access-token"
-        assert timeout > 0
-        path = urlsplit(url).path
-        if self.fail and self.fail in path:
-            raise HttpError(
-                status_code=503,
-                method="GET",
-                url=url,
-                response_text="private upstream content",
-            )
-        if path == "/userprofile-service/userprofile/settings":
+    def get(self, path, **kwargs):
+        params = kwargs.get("params")
+        self.calls.append((path, params))
+        if self.fail and any(
+            term in path
+            for term in ((self.fail,) if isinstance(self.fail, str) else self.fail)
+        ):
+            raise GarminConnectConnectionError("private upstream content")
+        if path == "/userprofile-service/userprofile/user-settings":
             return response(
-                {"displayName": self.display_name, "measurementSystem": "metric"}
+                {
+                    "userData": {
+                        "weight": 72500,
+                        "height": 180,
+                        "birthDate": "2000-01-01",
+                        "vo2MaxRunning": 51,
+                    }
+                }
             )
         if path == "/activitylist-service/activities/search/activities":
-            assert params == {"start": 0, "limit": 100}
+            assert params == {"start": "0", "limit": "100"}
             return response(
                 [
                     {
@@ -203,7 +211,55 @@ class OfficialTransport:
                     }
                 ]
             )
-        raise AssertionError(f"Undocumented or unexpected endpoint: {path}")
+        if path.startswith("/metrics-service/metrics/maxmet/daily/"):
+            return [
+                {
+                    "generic": {
+                        "calendarDate": str(DAY),
+                        "vo2MaxPreciseValue": 51.3,
+                        "vo2MaxValue": 51,
+                    },
+                    "cycling": {"calendarDate": str(DAY), "vo2MaxValue": 60},
+                }
+            ]
+        if path.startswith("/metrics-service/metrics/maxmet/latest/"):
+            return {
+                "generic": {"calendarDate": str(DAY), "vo2MaxPreciseValue": 51.3},
+                "userId": "private-account-id",
+            }
+        if path.startswith("/metrics-service/metrics/trainingreadiness/"):
+            return [
+                {
+                    "calendarDate": str(DAY),
+                    "score": 75,
+                    "timestampLocal": f"{DAY}T08:00:00",
+                    "userProfilePK": "private-account-id",
+                }
+            ]
+        if "/personalrecord/prs/" in path:
+            assert params == {"includeHistory": "false"}
+            return [
+                {
+                    "typeId": 3,
+                    "value": 1200,
+                    "activityId": 101,
+                    "activityName": "Run",
+                    "prStartTimeGmtFormatted": f"{DAY}T09:00:00",
+                }
+            ]
+        if path == "/device-service/deviceregistration/devices":
+            return [
+                {"productDisplayName": "Test Watch", "serialNumber": "private-serial"}
+            ]
+        if path.startswith(
+            ("/metrics-service/", "/biometric-service/", "/fitnessstats-service/")
+        ):
+            return {}
+        if path.startswith("/calendar-service/"):
+            return [] if path.endswith("/events") else {}
+        if path.startswith(("/badge-service/", "/gear-service/", "/goal-service/")):
+            return []
+        raise AssertionError(f"Unexpected Connect endpoint: {path}")
 
 
 class ExportTests(unittest.TestCase):
@@ -212,10 +268,8 @@ class ExportTests(unittest.TestCase):
         self.out = Path(self.temp.name)
         self.clock = patch.object(export_data, "TODAY", DAY)
         self.clock.start()
-        self.transport = OfficialTransport()
-        self.client = GarminPersonalApiClient(
-            "test-access-token", session=self.transport.session
-        )
+        self.transport = ConnectTransport()
+        self.client = garmin_api.GarminClient(self.transport.api)
 
     def tearDown(self):
         self.client.close()
@@ -225,7 +279,7 @@ class ExportTests(unittest.TestCase):
     def read(self, name):
         return json.loads((self.out / f"{name}.json").read_text())
 
-    def test_official_sdk_export_maps_health_and_weight_without_gps(self):
+    def test_connect_export_maps_health_weight_and_native_metrics_without_gps(self):
         manifest = export_data.export(self.client, self.out, 2)
         daily = self.read("daily")
         self.assertEqual(daily["rhr"][-1]["values"]["restingHR"], 48)
@@ -237,7 +291,13 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(daily["intensity_minutes_weekly"][0]["vigorousValue"], 20)
         self.assertEqual(self.read("body")["weigh_ins"][0]["weight_g"], 72500)
         self.assertEqual(self.read("profile")["unit_system"], "metric")
-        self.assertEqual(manifest["source"], "garmin_personal_api")
+        self.assertEqual(manifest["source"], "python_garminconnect")
+        self.assertEqual(daily["vo2max"][-1]["vo2max"], 51.3)
+        self.assertEqual(daily["readiness"][-1]["score"], 75)
+        self.assertEqual(self.read("records")["personal_records"][0]["value"], 1200)
+        self.assertNotIn("birthDate", (self.out / "profile.json").read_text())
+        self.assertNotIn("private-account-id", (self.out / "fitness.json").read_text())
+        self.assertNotIn("private-serial", (self.out / "profile.json").read_text())
         self.assertEqual(self.read("load_trend")[-1]["load"], 75)
         self.assertNotIn("startLatitude", self.read("activities")[0])
         unexpected = [
@@ -261,12 +321,12 @@ class ExportTests(unittest.TestCase):
         export_data.write_json(
             self.out, "fitness", {"training_status": {"historical": True}}
         )
-        self.transport.fail = "stats/stress"
+        self.transport.fail = ("stats/stress", "/maxmet/daily/", "/trainingstatus/")
         manifest = export_data.export(self.client, self.out, 2)
         self.assertEqual(self.read("daily")["vo2max"][0]["vo2max"], 51)
         self.assertEqual(self.read("daily")["stress"][0]["calendarDate"], "2026-11-01")
         self.assertTrue(self.read("fitness")["training_status"]["historical"])
-        self.assertEqual(manifest["sections"]["daily.vo2max"]["status"], "unavailable")
+        self.assertTrue(manifest["sections"]["daily.vo2max"]["retained"])
         self.assertTrue(manifest["sections"]["daily.stress"]["retained"])
         self.assertNotIn("private upstream content", json.dumps(manifest))
 
@@ -306,7 +366,7 @@ class ExportTests(unittest.TestCase):
         export_data.write_json(self.out, "activities", [{"activityId": 55}])
         before = (self.out / "activities.json").read_bytes()
         self.transport.fail = "activitylist-service"
-        with self.assertRaises(HttpError):
+        with self.assertRaises(GarminConnectConnectionError):
             export_data.export(self.client, self.out, 2)
         self.assertEqual((self.out / "activities.json").read_bytes(), before)
         self.assertFalse((self.out / "manifest.json").exists())
@@ -339,13 +399,8 @@ class ExportTests(unittest.TestCase):
 
     def test_authentication_error_in_optional_section_aborts(self):
         exporter = export_data.Exporter(self.out)
-        error = HttpError(
-            status_code=401,
-            method="GET",
-            url="https://personal.connectapi.garmin.com/test",
-            response_text="secret",
-        )
-        with self.assertRaises(HttpError):
+        error = GarminConnectAuthenticationError("private upstream content")
+        with self.assertRaises(GarminConnectAuthenticationError):
             exporter.section("daily.hrv", Mock(side_effect=error))
 
     def test_range_limits_are_inclusive_and_complete(self):
@@ -359,6 +414,95 @@ class ExportTests(unittest.TestCase):
             covered, list(range(date(2026, 1, 1).toordinal(), DAY.toordinal() + 1))
         )
         self.assertTrue(all((last - first).days < 28 for first, last in ranges))
+
+    def test_device_without_readiness_keeps_an_empty_successful_response(self):
+        self.transport.api.get_training_readiness_range = Mock(return_value=[])
+        manifest = export_data.export(self.client, self.out, 2)
+        self.assertEqual(self.read("daily")["readiness"], [])
+        self.assertTrue(manifest["sections"]["daily.readiness"]["ok"])
+        self.assertEqual(manifest["sections"]["daily.readiness"]["count"], 0)
+
+    def test_latest_readiness_recalculation_wins_and_zero_is_valid(self):
+        self.transport.api.get_training_readiness_range = Mock(
+            return_value=[
+                {
+                    "calendarDate": str(DAY),
+                    "timestampLocal": f"{DAY}T10:00:00",
+                    "score": 0,
+                },
+                {
+                    "calendarDate": str(DAY),
+                    "timestampLocal": f"{DAY}T08:00:00",
+                    "score": 50,
+                },
+            ]
+        )
+        rows = connect_metrics.readiness_series(self.client, DAY, DAY)
+        self.assertEqual(rows[0]["score"], 0)
+
+    def test_nested_and_flat_daily_summaries_map_to_the_same_measurements(self):
+        nested = [
+            {
+                "calendarDate": str(DAY),
+                "heartRate": {"restingValue": 48},
+                "intensityMinutes": {"goal": 150, "moderate": 20, "vigorous": 10},
+            }
+        ]
+        flat = [
+            {
+                "calendarDate": str(DAY),
+                "restingHeartRate": 48,
+                "intensityMinutesGoal": 150,
+                "moderateIntensityMinutes": 20,
+                "vigorousIntensityMinutes": 10,
+            }
+        ]
+        self.assertEqual(
+            export_data.resting_heart_rate(flat), export_data.resting_heart_rate(nested)
+        )
+        self.assertEqual(
+            export_data.weekly_intensity(flat), export_data.weekly_intensity(nested)
+        )
+
+    def test_body_battery_without_descriptors_handles_status_columns(self):
+        result = export_data.body_battery(
+            [
+                {
+                    "date": str(DAY),
+                    "bodyBatteryValuesArray": [
+                        [0, "MEASURED", 20],
+                        [1, "MEASURED", 80],
+                    ],
+                }
+            ]
+        )
+        self.assertEqual(result[0]["highest"], 80)
+        self.assertEqual(result[0]["lowest"], 20)
+
+    def test_rate_limits_abort_without_publishing_partial_data(self):
+        self.transport.api.get_weekly_training_status = Mock(
+            side_effect=GarminConnectTooManyRequestsError("private upstream content")
+        )
+        with self.assertRaises(GarminConnectTooManyRequestsError):
+            export_data.export(self.client, self.out, 2)
+        self.assertFalse((self.out / "manifest.json").exists())
+
+    def test_new_library_methods_and_non_mutating_zone_lookup_are_used(self):
+        export_data.export(self.client, self.out, 2)
+        paths = [path for path, _ in self.transport.calls]
+        self.assertTrue(any("trainingstatus/weekly/" in path for path in paths))
+        self.assertTrue(any("cycling-ability/latest" in path for path in paths))
+        self.assertTrue(any("runningeconomy/latest" in path for path in paths))
+        self.assertTrue(any("criticalSwimSpeed/latest" in path for path in paths))
+        self.assertTrue(
+            any("fitnessstats-service/powerCurve" in path for path in paths)
+        )
+        zones = next(
+            params
+            for path, params in self.transport.calls
+            if path == "/biometric-service/heartRateZones/v2"
+        )
+        self.assertEqual(zones, {"generateDefaults": "false"})
 
 
 class FitTests(unittest.TestCase):
@@ -480,6 +624,136 @@ class FitTests(unittest.TestCase):
             self.assertEqual(detail["name"], "Run")
             self.assertNotIn("gps", detail)
             self.assertNotIn("startLatitude", json.dumps(detail))
+
+
+class GarminAuthenticationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.directory = Path(self.temp.name)
+        self.tokens = {
+            "di_token": "test-access",
+            "di_refresh_token": "initial-refresh",
+            "di_client_id": "test-client",
+        }
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_rotated_tokens_are_encrypted_and_reused_across_runs(self):
+        state = garmin_api.TokenState(self.tokens, self.directory)
+        rotated = {**self.tokens, "di_refresh_token": "rotated-refresh"}
+        state.save(rotated)
+        self.assertNotIn(b"rotated-refresh", state.path.read_bytes())
+        self.assertNotIn(b"test-access", state.path.read_bytes())
+        self.assertEqual(state.path.stat().st_mode & 0o777, 0o600)
+        resumed = garmin_api.TokenState(self.tokens, self.directory)
+        self.assertEqual(resumed.tokens, rotated)
+        replaced = garmin_api.TokenState(
+            {**self.tokens, "di_refresh_token": "new-login"}, self.directory
+        )
+        self.assertNotEqual(replaced.path, state.path)
+
+    def test_login_uses_latest_encrypted_state_and_saves_on_later_failure(self):
+        # The failure is intentionally inside an already-open authenticated client.
+        rotated = {**self.tokens, "di_refresh_token": "rotated-refresh"}
+        garmin_api.TokenState(self.tokens, self.directory).save(rotated)
+        api = Mock()
+        api.client.is_authenticated = True
+        api.client.dumps.return_value = json.dumps(rotated)
+        api.get_race_predictions.side_effect = GarminConnectConnectionError(
+            "private upstream content"
+        )
+        with (  # noqa: SIM117
+            patch.dict(
+                "os.environ",
+                {
+                    "GARMIN_TOKENS_JSON": json.dumps(self.tokens),
+                    "GARMIN_STATE_DIR": str(self.directory),
+                },
+            ),
+            patch.object(garmin_api, "Garmin", return_value=api),
+        ):
+            with garmin_api.create_client() as client:
+                self.assertEqual(json.loads(api.login.call_args.args[0]), rotated)
+                next_tokens = {**rotated, "di_refresh_token": "next-refresh"}
+                api.client.dumps.return_value = json.dumps(next_tokens)
+                with self.assertRaises(GarminConnectConnectionError):
+                    client.get_race_predictions()
+        self.assertEqual(
+            garmin_api.TokenState(self.tokens, self.directory).tokens, next_tokens
+        )
+
+    def test_tokens_refreshed_during_a_failed_login_are_preserved(self):
+        api = Mock()
+        api.client.is_authenticated = True
+        rotated = {**self.tokens, "di_refresh_token": "refreshed-at-login"}
+        api.client.dumps.return_value = json.dumps(rotated)
+        api.login.side_effect = GarminConnectConnectionError("profile request failed")
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "GARMIN_TOKENS_JSON": json.dumps(self.tokens),
+                    "GARMIN_STATE_DIR": str(self.directory),
+                },
+            ),
+            patch.object(garmin_api, "Garmin", return_value=api),
+            self.assertRaises(GarminConnectConnectionError),
+        ):
+            garmin_api.create_client()
+        self.assertEqual(
+            garmin_api.TokenState(self.tokens, self.directory).tokens, rotated
+        )
+
+    def test_old_garth_tokens_fail_before_any_login_request(self):
+        with (
+            patch.dict(
+                "os.environ",
+                {"GARMIN_TOKENS_JSON": '{"oauth1_token":"old-private-token"}'},
+            ),
+            patch.object(garmin_api, "Garmin") as factory,
+            self.assertRaises(garmin_api.GarminConfigurationError) as caught,
+        ):
+            garmin_api.create_client()
+        factory.return_value.login.assert_not_called()
+        self.assertIn("setup_garmin_token.py", str(caught.exception))
+        self.assertNotIn("old-private-token", str(caught.exception))
+
+    def test_corrupt_encrypted_state_is_not_silently_reset(self):
+        state = garmin_api.TokenState(self.tokens, self.directory)
+        state.save(self.tokens)
+        state.path.write_bytes(b"corrupt")
+        with self.assertRaises(garmin_api.GarminConfigurationError):
+            garmin_api.TokenState(self.tokens, self.directory)
+
+    def test_setup_resumes_mfa_without_saving_password_or_printing_tokens(self):
+        first, resumed = Mock(), Mock()
+        first.login.return_value = ("needs_mfa", {"session": "private-cookie"})
+        resumed.client.dumps.return_value = json.dumps(self.tokens)
+        output = io.StringIO()
+        with (
+            patch.object(
+                sys,
+                "argv",
+                ["setup_garmin_token.py", "--token-dir", str(self.directory)],
+            ),
+            patch.object(setup_garmin_token, "Garmin", side_effect=[first, resumed]),
+            patch("builtins.input", return_value="athlete@example.invalid"),
+            patch.object(
+                setup_garmin_token.getpass,
+                "getpass",
+                side_effect=["private-password", "123456"],
+            ),
+            redirect_stdout(output),
+        ):
+            self.assertEqual(setup_garmin_token.main(), 0)
+        resumed.resume_login.assert_called_once_with(
+            {"session": "private-cookie"}, "123456"
+        )
+        resumed.client.dump.assert_called_once_with(str(self.directory))
+        self.assertIn("GARMIN_TOKENS_JSON", output.getvalue())
+        self.assertNotIn("private-password", output.getvalue())
+        self.assertNotIn("private-cookie", output.getvalue())
 
 
 class StravaTests(unittest.TestCase):

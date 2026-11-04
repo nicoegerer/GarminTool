@@ -1,14 +1,13 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["garmin-connect-personal-api-python==1.0.0"]
+# dependencies = ["garminconnect==0.3.20", "cryptography>=46,<51"]
 # ///
-"""Export Garmin's official Personal API to the dashboard's static JSON schema.
+"""Export Garmin Connect to the dashboard through python-garminconnect.
 
     uv run scripts/export_data.py [--days 400] [--out docs/data]
 
-Uses GARMIN_PERSONAL_API_KEY or the official SDK's local key file. Unsupported
-Personal API domains retain their historical export and are marked unavailable
-in manifest.json. No Garmin password, MCP, or private Connect API is used.
+Uses new DI tokens from GARMIN_TOKENS_JSON or .garmin_tokens. Only read requests
+are made; optional failures retain earlier data and are recorded in manifest.json.
 """
 
 from __future__ import annotations
@@ -25,6 +24,16 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from connect_metrics import (
+    export_fitness,
+    export_optional_domains,
+    export_records,
+    profile_devices,
+    profile_user,
+    readiness_series,
+    safe_metrics,
+    vo2_series,
+)
 from garmin_api import authentication_failed, create_client, error_message
 
 TODAY = date.today()
@@ -57,7 +66,8 @@ class Exporter:
         self._previous: dict[str, Any] = {}
         self.manifest = {
             "generated_at": datetime.now().astimezone().isoformat(),
-            "source": "garmin_personal_api",
+            "source": "python_garminconnect",
+            "client_version": "0.3.20",
             "sections": {},
         }
 
@@ -89,21 +99,12 @@ class Exporter:
             return previous if previous is not None else default
         self.manifest["sections"][name] = {
             "ok": True,
+            "source": "python_garminconnect",
             "count": len(result)
             if isinstance(result, (list, dict))
             else int(result is not None),
         }
         return result
-
-    def unavailable(self, name: str, default=None):
-        previous = self.previous(name)
-        self.manifest["sections"][name] = {
-            "ok": False,
-            "status": "unavailable",
-            "error": "Dieser Datenbereich ist in der Garmin Personal API nicht verfügbar.",
-            "retained": previous is not None,
-        }
-        return previous if previous is not None else default
 
 
 def chunked_dates(start: date, end: date, days: int):
@@ -245,6 +246,16 @@ def weekly_intensity(rows: list[dict]) -> list[dict]:
     weeks = {}
     for row in rows:
         minutes = row.get("intensityMinutes")
+        if not minutes and any(
+            row.get(key) is not None
+            for key in ("moderateIntensityMinutes", "vigorousIntensityMinutes")
+        ):
+            minutes = {
+                "goal": row.get("intensityMinutesGoal")
+                or row.get("moderateIntensityMinutesGoal"),
+                "moderate": row.get("moderateIntensityMinutes"),
+                "vigorous": row.get("vigorousIntensityMinutes"),
+            }
         if not minutes or not row.get("calendarDate"):
             continue
         day = date.fromisoformat(row["calendarDate"])
@@ -264,17 +275,36 @@ def weekly_intensity(rows: list[dict]) -> list[dict]:
     return [weeks[key] for key in sorted(weeks)]
 
 
+def resting_heart_rate(rows: list[dict]) -> list[dict]:
+    result = []
+    for row in rows:
+        value = (row.get("heartRate") or {}).get("restingValue")
+        if value is None:
+            value = row.get("restingHeartRate")
+        if row.get("calendarDate") and value is not None:
+            result.append(
+                {"calendarDate": row["calendarDate"], "values": {"restingHR": value}}
+            )
+    return result
+
+
 def body_battery(rows: list[dict]) -> list[dict]:
     result = []
     for row in rows:
         descriptors = row.get("bodyBatteryValueDescriptorDTOList") or []
+        samples = row.get("bodyBatteryValuesArray") or []
+        fallback_index = (
+            2
+            if samples and len(samples[0]) > 2 and isinstance(samples[0][1], str)
+            else 1
+        )
         index = next(
             (
                 d["bodyBatteryValueDescriptorIndex"]
                 for d in descriptors
                 if d.get("bodyBatteryValueDescriptorKey") == "bodyBatteryLevel"
             ),
-            1,
+            fallback_index,
         )
         values = [
             v[index]
@@ -418,8 +448,12 @@ def export(client, out: Path, days: int) -> dict:
     profile = {
         "full_name": name,
         "unit_system": settings.get("measurementSystem"),
-        "user": exporter.unavailable("profile.user", {}),
-        "devices": exporter.unavailable("profile.devices", []),
+        "user": exporter.section(
+            "profile.user", lambda: profile_user(client), default={}
+        ),
+        "devices": exporter.section(
+            "profile.devices", lambda: profile_devices(client), default=[]
+        ),
     }
 
     @cache
@@ -449,14 +483,7 @@ def export(client, out: Path, days: int) -> dict:
         ),
         "rhr": exporter.section(
             "daily.rhr",
-            lambda: [
-                {
-                    "calendarDate": row.get("calendarDate"),
-                    "values": {"restingHR": row["heartRate"].get("restingValue")},
-                }
-                for row in summaries()
-                if row.get("heartRate")
-            ],
+            lambda: resting_heart_rate(summaries()),
             default=[],
         ),
         "sleep_scores": exporter.section("daily.sleep_scores", sleep, default=[]),
@@ -488,21 +515,22 @@ def export(client, out: Path, days: int) -> dict:
             lambda: weekly_intensity(summaries()),
             default=[],
         ),
-        "vo2max": exporter.unavailable("daily.vo2max", []),
-        "readiness": exporter.unavailable("daily.readiness", []),
+        "vo2max": exporter.section(
+            "daily.vo2max",
+            lambda: vo2_series(client, start, TODAY, chunked_dates),
+            default=[],
+        ),
+        "readiness": exporter.section(
+            "daily.readiness",
+            lambda: readiness_series(
+                client, max(start, TODAY - timedelta(days=59)), TODAY
+            ),
+            default=[],
+        ),
     }
-    fitness = {
-        key: exporter.unavailable(f"fitness.{key}")
-        for key in (
-            "training_status",
-            "race_predictions",
-            "race_predictions_history",
-            "endurance_score",
-            "hill_score",
-        )
-    }
+    fitness = export_fitness(exporter, client, start, TODAY, chunked_dates)
     fitness["fitness_age"] = exporter.section(
-        "fitness.fitness_age", lambda: client.get_fitness_age(TODAY)
+        "fitness.fitness_age", lambda: safe_metrics(client.get_fitness_age(TODAY))
     )
     fitness["hr_zones"] = exporter.section(
         "fitness.hr_zones", client.get_heart_rate_zones, default=[]
@@ -514,6 +542,7 @@ def export(client, out: Path, days: int) -> dict:
             default=[],
         )
     }
+    optional = export_optional_domains(exporter, client, TODAY)
     files = {
         "profile": profile,
         "activities": activities,
@@ -529,10 +558,8 @@ def export(client, out: Path, days: int) -> dict:
             ],
             default=[],
         ),
-        "records": exporter.unavailable("records"),
-        "gear": exporter.unavailable("gear"),
-        "goals": exporter.unavailable("goals"),
-        "calendar": exporter.unavailable("calendar"),
+        "records": export_records(exporter, client),
+        **optional,
         # Strength sets are populated by the official FIT detail exporter.
         "load_trend": exporter.section(
             "load_trend", lambda: compute_load_trend(activities, days)
@@ -563,7 +590,7 @@ def main() -> int:
         for item in manifest["sections"].values()
     )
     log(
-        f"Export über die Garmin Personal API abgeschlossen. {failed} optionale Bereiche fehlgeschlagen."
+        f"Export über python-garminconnect abgeschlossen. {failed} optionale Bereiche fehlgeschlagen."
     )
     return 0
 

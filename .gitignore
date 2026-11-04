@@ -6,6 +6,8 @@ venv/
 *.db-journal
 .env
 .garmin_tokens/
+.garminconnect/
+garmin_tokens.json
 node_modules/
 dist/
 frontend/dist/
@@ -25,7 +27,7 @@ app/public/data/
 strava-sync-local/
 namen_sync.log
 
-# Lokale API-Schlüssel und unverschlüsselte Garmin-Bearer-Tokens
+# Lokale Schlüssel und unverschlüsselte Zugangsdaten
 /.api-state/
 config.json
 connect-personal-api-key

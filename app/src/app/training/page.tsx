@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useData, useGarmin } from "@/lib/data";
 import { Card, Empty, PageHeader, Skeleton } from "@/components/ui/primitives";
 import { ActivitySheet } from "@/components/dashboard/activity-sheet";
+import { TrainingMetrics } from "@/components/training-metrics";
 import { Tile } from "@/components/dashboard/sheet-parts";
 import { themeToken } from "@/lib/theme-tokens";
 import { addDays, cn, fmtDur, fmtKm, fmtNum, isoDate, parseDate, weekStart } from "@/lib/format";
@@ -53,6 +54,8 @@ function Training() {
   return (
     <>
       <PageHeader kicker="Training" title="Deine Woche" sub="Eine Woche auf einmal — mit Vor und Zurück." />
+
+      <TrainingMetrics />
 
       <Card className="mb-4 p-5">
         {/* Wochen-Navigation */}

@@ -1,10 +1,10 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["garmin-connect-personal-api-python==1.0.0", "garmin-fit-sdk==21.218.0"]
+# dependencies = ["garminconnect==0.3.20", "garmin-fit-sdk==21.218.0", "cryptography>=46,<51"]
 # ///
 """Exports per-activity detail files consumed by the activity detail pages.
 
-Uses the official Personal API activity summary and FIT download. Writes one
+Uses python-garminconnect activity summaries and FIT downloads. Writes one
 file per activity to <out>/activity/<id>.json, keeping the dashboard schema.
 
 Usage:
@@ -191,7 +191,7 @@ def build_detail(
         "name": activity.get("activityName"),
         "startTimeLocal": activity.get("startTimeLocal"),
         "summary": pick(summary, COMMON_FIELDS),
-        "source": "garmin_personal_api",
+        "source": "python_garminconnect",
         "fit_status": fit_status,
     }
 
@@ -293,7 +293,7 @@ def main() -> int:
         log(error_message(exc))
         return 1
     log(
-        f"Personal API · {len(selected)} Aktivitaeten · GPS: {'AN' if args.include_gps else 'AUS'}"
+        f"Garmin Connect · {len(selected)} Aktivitaeten · GPS: {'AN' if args.include_gps else 'AUS'}"
     )
 
     written = skipped = failed = 0
@@ -387,7 +387,7 @@ def main() -> int:
             {
                 "count": len(list(detail_dir.glob("*.json"))),
                 "gps": args.include_gps,
-                "source": "garmin_personal_api",
+                "source": "python_garminconnect",
                 "failed": failed,
             }
         ),
